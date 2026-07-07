@@ -32,13 +32,17 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
         return res.status(401).json({ error: 'Неверный номер телефона или пароль' });
         }
 
+        const companies = (user.role === 'admin' || user.role === 'dispatcher')
+        ? ['crocus', 'meridian'] // Список всех твоих УК
+        : [user.companyId];
+
         return res.json({
         success: true,
         user: {
             id: user.id,
             name: user.name,
             role: user.role,
-            companyId: user.companyId
+            companyId: companies
         }
         });
     } catch (error) {

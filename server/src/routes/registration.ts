@@ -84,7 +84,7 @@ router.post('/generate', async (req: Request, res: Response): Promise<any> => {
             }
         });
 
-        const inviteUrl = `http://${companyId}.localhost:5173/?token=${token}`;
+        const inviteUrl = `http://localhost:5173/?token=${token}`;
 
         return res.json({
             success: true,

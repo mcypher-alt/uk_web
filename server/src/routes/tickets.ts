@@ -129,23 +129,54 @@ router.post('/master/complete', async (req: Request, res: Response): Promise<any
 });
 
 router.post('/dispatcher/close', async (req: Request, res: Response): Promise<any> => {
-    const { ticketId } = req.body;
+    // Добавляем userId в деструктуризацию тела запроса
+    const { ticketId, userId } = req.body;
 
-    if (!ticketId) {
-        return res.status(400).json({ error: 'Необходимо передать ticketId' });
+    if (!ticketId || !userId) {
+        return res.status(400).json({ error: 'Необходимо передать ticketId и userId' });
     }
 
     try {
-        const ticket = await prisma.ticket.update({
+        // 1. Ищем пользователя в базе, чтобы проверить его роль и компанию
+        const user = await prisma.user.findUnique({
+            where: { id: Number(userId) }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+
+        // 2. ПРОВЕРКА РОЛИ: Закрывать заявки могут только диспетчеры и админы
+        const userRole = user.role.toLowerCase();
+        if (userRole !== 'dispatcher' && userRole !== 'admin') {
+            return res.status(403).json({ error: 'У вас нет прав для принудительного закрытия заявок' });
+        }
+
+        // 3. Ищем саму заявку
+        const ticket = await prisma.ticket.findUnique({
+            where: { id: Number(ticketId) }
+        });
+
+        if (!ticket) {
+            return res.status(404).json({ error: 'Заявка не найдена' });
+        }
+
+        // 4. ПРОВЕРКА КОМПАНИИ: Диспетчер не должен иметь возможности закрыть заявку чужой УК
+        // (Админу разрешаем всё)
+        if (userRole !== 'admin' && ticket.companyId !== user.companyId) {
+            return res.status(403).json({ error: 'Вы не можете управлять заявками чужой управляющей компании' });
+        }
+
+        // 5. Если все барьеры пройдены — обновляем статус на completed
+        const updatedTicket = await prisma.ticket.update({
             where: { id: Number(ticketId) },
             data: {
                 status: 'completed',
-                completedAt: new Date() // Фиксируем время закрытия
-                // Поля tenantRating и tenantComment оставляем нетронутыми, их заполнит жилец
+                completedAt: new Date()
             }
         });
 
-        return res.json({ success: true, ticket });
+        return res.json({ success: true, ticket: updatedTicket });
     } catch (error) {
         console.error('Ошибка при закрытии заявки диспетчером:', error);
         return res.status(500).json({ error: 'Не удалось закрыть заявку' });
@@ -222,29 +253,47 @@ router.get('/my', async (req: Request, res: Response): Promise<any> => {
     }
 });
 
-router.get('/', async (req: Request, res: Response) =>  {
+router.get('/', async (req: Request, res: Response): Promise<any> => {
     try {
         const { companyId, masterId, status, type } = req.query;
 
         if (!companyId) {
-            res.status(400).json({ error: 'Параметр companyId обязателен' });
-            return;
+            return res.status(400).json({ error: 'Параметр companyId обязателен' });
         }
 
-        const whereClause: any = {
-            companyId: String(companyId)
-        };
+        const whereClause: any = {};
 
+        // Проверяем: если пришел массив, передаем его целиком. 
+        // Если пришла одна строка, оборачиваем её в массив [companyId]
+        if (Array.isArray(companyId)) {
+            whereClause.companyId = { in: companyId.map(id => String(id)) };
+        } else {
+            // Если с фронта пришла строка через запятую "uk_vostok,uk_zapad", можно её расплитить
+            if (String(companyId).includes(',')) {
+                const companiesArray = String(companyId).split(',').map(id => id.trim());
+                whereClause.companyId = { in: companiesArray };
+            } else {
+                // Если пришла строго одна компания
+                whereClause.companyId = String(companyId);
+            }
+        }
+
+        // Логика фильтрации мастеров
         if (masterId === 'null') {
             whereClause.masterId = null;
         } else if (masterId) {
             whereClause.masterId = parseInt(masterId as string);
         }
+        
+        // Логика фильтрации статусов
         if (status) {
             whereClause.status = String(status);
         }
+        
+        // КСТАТИ: у тебя тут была небольшая бага! 
+        // Вместо жесткого хардкода "emergency", лучше брать значение из type, которое пришло с фронта
         if (type) {
-            whereClause.type = "emergency";
+            whereClause.type = String(type); // 'emergency' или 'regular'
         }
 
         const tickets = await prisma.ticket.findMany({
@@ -254,10 +303,10 @@ router.get('/', async (req: Request, res: Response) =>  {
             }
         });
 
-        res.json({ tickets })
+        return res.json({ tickets });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+        console.error('Ошибка получения заявок:', error);
+        return res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
 

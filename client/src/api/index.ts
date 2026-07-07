@@ -1,0 +1,64 @@
+import axios from 'axios';
+import type { Ticket, User, House } from '../types.js';
+
+const api = axios.create({
+  baseURL: '/api',
+});
+
+export const authApi = {
+  login: async (data: any) => (await api.post('/login', data)).data,
+  register: async (data: any) => (await api.post('/registration', data)).data,
+  generateInvite: async (data: any) => (await api.post('/registration/generate', data)).data,
+};
+
+export const ticketsApi = {
+  // Достаем массив из ключа .tickets или .data, если бэк отдал объект
+  getTickets: async (params: any) => {
+    // Спорный момент: убедись, что тут правильный эндпоинт для заявок диспетчера, например '/tickets'
+    const res = (await api.get('/tickets', { params })).data; 
+    if (Array.isArray(res)) return res;
+    return res?.tickets || res?.data || [];
+  },
+
+  getMyTickets: async (params: any) => {
+    const res = (await api.get('/tickets/my', { params })).data;
+    if (Array.isArray(res)) return res;
+    return res?.tickets || res?.data || [];
+  },
+
+  create: async (data: any) => (await api.post('/tickets', data)).data,
+  
+  closeByDispatcher: async (data: { ticketId: number; userId: number }) => 
+    (await api.post('/tickets/dispatcher/close', data)).data,
+    
+  assignMaster: async (data: { ticketId: number; masterId: number }) => 
+    (await api.post('/tickets/assign', data)).data,
+
+  // ИСПРАВЛЕНО: Возвращаем методы, которые заждался MasterDashboard
+  acceptByMaster: async (data: { ticketId: number; masterId: number }) => 
+    (await api.post('/tickets/master/accept', data)).data,
+
+  completeByMaster: async (data: { ticketId: number; masterId: number }) => 
+    (await api.post('/tickets/master/complete', data)).data,
+};
+
+export const dictApi = {
+  getHouses: async (companyId: string) => {
+    const res = (await api.get('/houses', { params: { companyId } })).data;
+    
+    // Если бэк вернул чистый массив (на всякий случай)
+    if (Array.isArray(res)) return res;
+    
+    // ИСПРАВЛЕНО: Забираем массив строк из ключа .addresses, который шлет твой бэк
+    return res?.addresses || res?.houses || res?.data || [];
+  },
+
+  // ИСПРАВЛЕНО: Теперь эта функция ВСЕГДА возвращает чистый массив, 
+  // вытаскивая его из твоего ключа { masters: [...] }
+  getMasters: async (companyId: string) => {
+    const res = (await api.get('/users/masters', { params: { companyId } })).data;
+    if (Array.isArray(res)) return res;
+    return res?.masters || res?.users || res?.data || [];
+  },
+};
+
