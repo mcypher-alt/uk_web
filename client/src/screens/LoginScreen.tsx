@@ -30,9 +30,11 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         setError(data.message || 'Неверный логин или пароль');
       }
     } catch (err: any) {
-      // Спорный момент: Ошибки бэкенда могут приходить в разном формате.
-      // Проверяем стандартную структуру axios error.
-      setError(err.response?.data?.message || 'Ошибка сети. Проверьте интернет-соединение.');
+      setError(
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        'Ошибка сети. Проверьте интернет-соединение.'
+      );
     } finally {
       setIsLoading(false);
     }

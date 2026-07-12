@@ -51,28 +51,23 @@ export default function App() {
     setUser(null);
   };
 
- if (!user) {
-    // Если в URL есть токен инвайта — открываем регистрацию
-    if (isRegistering && inviteParams.token) {
-      return (
-        <RegisterScreen 
-          token={inviteParams.token} 
-          onRegisterSuccess={() => {
-            setIsRegistering(false);
-            // Чистим URL от токена, чтобы при F5 не швыряло опять на регистрацию
-            window.history.replaceState({}, document.title, window.location.pathname);
-            
-            // Опционально: если бэк при успешной регистрации сразу сессию не возвращает, 
-            // то юзер просто увидит чистый экран логина и введет пароль. Это ок.
-            alert('Регистрация успешна! Теперь вы можете войти в систему.');
-          }}
-        />
-      );
-    }
-
-    // Если токена нет — обычный экран логина
-    return <LoginScreen onLogin={handleLogin} />;
+if (!user) {
+  if (isRegistering && inviteParams.token) {
+    return (
+      <RegisterScreen 
+        token={inviteParams.token} 
+        onRegisterSuccess={() => {
+          // 1. Скрываем экран регистрации (автоматически покажется LoginScreen)
+          setIsRegistering(false);
+          // 2. Очищаем URL от токена
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }}
+      />
+    );
   }
+
+  return <LoginScreen onLogin={handleLogin} />;
+}
 
   return (
     <QueryClientProvider client={queryClient}>
