@@ -2,8 +2,11 @@ import { Router } from 'express';
 import type { Request, Response }  from 'express';
 import bcrypt from 'bcrypt';
 import prisma from '../lib/prisma.js';
+import jwt from 'jsonwebtoken';
 
 const router = Router();
+
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
 
 router.post('/', async (req: Request, res: Response): Promise<any> => {
     const { phone, password } = req.body;
@@ -36,6 +39,23 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
         ? ['crocus', 'meridian'] // Список всех твоих УК
         : [user.companyId];
 
+        const token = jwt.sign(
+        {
+            id: user.id,
+            role: user.role,
+            companyId: user.companyId
+        },
+        JWT_SECRET,
+        { expiresIn: '7d' } // Токен автоматически протухнет через 7 дней
+        );
+
+        res.cookie('token', token, {
+            httpOnly: true, // Защита от XSS (JS не увидит куку)
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 дней в ms
+        });
+
         return res.json({
         success: true,
         user: {
@@ -48,6 +68,38 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
     } catch (error) {
         console.error('Ошибка при авторизации:', error);
         return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    }
+});
+
+router.post('/logout', (req: Request, res: Response): any => {
+    res.clearCookie('token');
+    return res.json({ success: true });
+});
+
+router.get('/me', (req: Request, res: Response): any => {
+    // Cookie-parser автоматически кладет куки в req.cookies
+    const token = req.cookies.token;
+
+    if (!token) {
+        return res.status(401).json({ authenticated: false });
+    }
+
+    try {
+        // Расшифровываем JWT и проверяем, не протух ли он
+        const decoded = jwt.verify(token, JWT_SECRET) as {
+            id: number;
+            role: string;
+            companyId: string;
+        };
+
+        return res.json({ 
+            authenticated: true, 
+            user: decoded 
+        });
+    } catch (error) {
+        // Если токен подделан или истек срок (7 дней) — стираем плохую куку
+        res.clearCookie('token');
+        return res.status(401).json({ authenticated: false, error: 'Сессия истекла' });
     }
 });
 

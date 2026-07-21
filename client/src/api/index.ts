@@ -3,12 +3,15 @@ import type { Ticket, User, House } from '../types.js';
 
 const api = axios.create({
   baseURL: '/api',
+  withCredentials: true,
 });
 
 export const authApi = {
   login: async (data: any) => (await api.post('/login', data)).data,
   register: async (data: any) => (await api.post('/registration', data)).data,
   generateInvite: async (data: any) => (await api.post('/registration/generate', data)).data,
+  getMe: async () => (await api.get('/login/me')).data,
+  logout: async () => (await api.post('/login/logout')).data,
 };
 
 export const ticketsApi = {

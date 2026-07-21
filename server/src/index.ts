@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import usersRouter from './routes/users.js';
 import ticketsRouter from './routes/tickets.js';
 import metersRouter from './routes/meters.js';
@@ -12,8 +13,12 @@ import houseRouter from './routes/houses.js'
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+app.use(cors({
+    origin: ['http://localhost:5173'], // Добавь сюда порты своего фронтенда
+    credentials: true
+}));
 app.use(express.json());
+app.use(cookieParser());
 
 app.use('/api/houses', houseRouter);
 app.use('/api/users', usersRouter);
