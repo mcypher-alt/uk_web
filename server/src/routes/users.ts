@@ -1,38 +1,12 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import prisma from '../lib/prisma.js'; 
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
-router.post('/', async (req: Request, res: Response) => {
-    try {
-        const { name, role, companyId } = req.body;
-
-        if (!name || !companyId) {
-            res.status(400).json({ error: 'Имя сотрудника и companyId обязательны' });
-            return;
-        }
-
-        const newUser = await prisma.user.create({
-            data: {
-                name: String(name),
-                role: role || 'MASTER', // Если роль не передали, по дефолту ставим MASTER
-                companyId: String(companyId),
-                phone: '',
-                password: ''
-            }
-        });
-
-        res.status(201).json({ user: newUser });
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Не удалось создать сотрудника' });
-    }
-});
-
-// GET /api/users/masters?companyId=...
-router.get('/masters', async (req: Request, res: Response): Promise<any> => {
+// 2. GET /masters — Список мастеров (для выпадающего списка при назначении заявки)
+router.get('/masters', requireAuth(['dispatcher', 'admin']), async (req: Request, res: Response): Promise<any> => {
     const { companyId } = req.query;
 
     if (!companyId) {
@@ -43,7 +17,7 @@ router.get('/masters', async (req: Request, res: Response): Promise<any> => {
         const masters = await prisma.user.findMany({
             where: {
                 companyId: String(companyId),
-                role: 'master' // Тянем только мастеров, диспетчеров назначать на трубы не нужно
+                role: 'master' // Тянем только мастеров
             },
             select: {
                 id: true,
@@ -59,43 +33,44 @@ router.get('/masters', async (req: Request, res: Response): Promise<any> => {
     }
 });
 
-router.get('/:id/workload', async (req: Request, res: Response) => {
+// 3. GET /:id/workload — Проверка нагрузки мастера (сколько у него активных заявок)
+router.get('/:id/workload', requireAuth(['dispatcher', 'admin']), async (req: Request, res: Response): Promise<any> => {
     try {
         const masterId = parseInt(req.params.id as string);
         const { companyId } = req.query;
 
         if (isNaN(masterId) || !companyId) {
-        res.status(400).json({ error: 'Некорректные параметры запроса' });
-        return;
+            return res.status(400).json({ error: 'Некорректные параметры запроса' });
         }
 
         const master = await prisma.user.findFirst({
             where: {
                 id: masterId,
+                // Так как диспетчер имеет доступ к обеим УК, доверяем companyId из запроса
                 companyId: String(companyId)
             }
         });
 
         if (!master) {
-        res.status(404).json({ error: 'Мастер не найден в вашей управляющей компании' });
-        return;
-    }
-
-    const activeTicketsCount = await prisma.ticket.count({
-        where: {
-            masterId: masterId,
-            status: { in: ['new', 'in_work'] }
+            return res.status(404).json({ error: 'Мастер не найден в указанной управляющей компании' });
         }
-    });
 
-    res.json({
-        hasActiveTickets: activeTicketsCount > 0,
-        count: activeTicketsCount
-    });
+        const activeTicketsCount = await prisma.ticket.count({
+            where: {
+                masterId: masterId,
+                status: { in: ['new', 'in_work'] }
+            }
+        });
+
+        return res.json({
+            hasActiveTickets: activeTicketsCount > 0,
+            count: activeTicketsCount
+        });
 
     } catch (error) {
-        res.status(500).json({ error: 'Ошибка сервера при проверке нагрузки мастера' });
+        console.error('Ошибка сервера при проверке нагрузки мастера:', error);
+        return res.status(500).json({ error: 'Ошибка сервера при проверке нагрузки мастера' });
     }
-})
+});
 
 export default router;

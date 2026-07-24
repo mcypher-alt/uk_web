@@ -2,10 +2,14 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
 import crypto from 'crypto';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
-router.post('/', async (req: Request, res: Response): Promise<any> => {
+/**
+ * 1. POST / — Создание заявки из веб-панели (Диспетчер / Админ)
+ */
+router.post('/', requireAuth(['dispatcher', 'admin']), async (req: Request, res: Response): Promise<any> => {
     const { companyId, address, description, type } = req.body;
 
     if (!companyId || !address || !description || !type) {
@@ -25,6 +29,7 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
                 }
             }
         });
+
         if (!houseExists) {
             return res.status(400).json({ 
                 error: 'Указанный адрес не обслуживается нашей управляющей компанией' 
@@ -32,15 +37,15 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
         }
 
         const newTicket = await prisma.ticket.create({
-        data: {
-            address,
-            description,
-            type,
-            status: 'new',
-            company: {
-            connect: { id: companyId }
+            data: {
+                address,
+                description,
+                type,
+                status: 'new',
+                company: {
+                    connect: { id: companyId }
+                }
             }
-        }
         });
 
         return res.status(201).json(newTicket);
@@ -50,7 +55,10 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
     }
 });
 
-router.post('/assign', async (req: Request, res: Response): Promise<any> => {
+/**
+ * 2. POST /assign — Назначение мастера на заявку (Диспетчер / Админ)
+ */
+router.post('/assign', requireAuth(['dispatcher', 'admin']), async (req: Request, res: Response): Promise<any> => {
     const { ticketId, masterId } = req.body;
 
     if (!ticketId || !masterId) {
@@ -58,14 +66,13 @@ router.post('/assign', async (req: Request, res: Response): Promise<any> => {
     }
 
     try {
-        // Обновляем тикет в базе
         const updatedTicket = await prisma.ticket.update({
             where: { id: Number(ticketId) },
             data: {
                 masterId: Number(masterId),
-                status: 'new', // Оставляем 'new', чтобы мастер сам нажал "Принять"
+                status: 'new',
                 assignedAt: new Date()
-                    }
+            }
         });
 
         return res.json({ success: true, ticket: updatedTicket });
@@ -75,19 +82,23 @@ router.post('/assign', async (req: Request, res: Response): Promise<any> => {
     }
 });
 
-router.post('/master/accept', async (req: Request, res: Response): Promise<any> => {
-    const { ticketId, masterId } = req.body;
+/**
+ * 3. POST /master/accept — Принятие заявки мастером (Мастер / Админ)
+ */
+router.post('/master/accept', requireAuth(['master', 'admin']), async (req: Request, res: Response): Promise<any> => {
+    const { ticketId } = req.body;
 
-    if (!ticketId || !masterId) {
-        return res.status(400).json({ error: 'Необходимо передать ticketId и masterId' });
+    if (!ticketId) {
+        return res.status(400).json({ error: 'Необходимо передать ticketId' });
     }
 
     try {
+        // ID мастера берем строго из авторизованного юзера в куке (req.user)
         const ticket = await prisma.ticket.update({
             where: { id: Number(ticketId) },
             data: {
                 status: 'in_work',
-                masterId: Number(masterId) // На случай, если мастер берет неназначенную заявку сам
+                masterId: req.user!.id 
             }
         });
 
@@ -98,18 +109,21 @@ router.post('/master/accept', async (req: Request, res: Response): Promise<any> 
     }
 });
 
-router.post('/master/complete', async (req: Request, res: Response): Promise<any> => {
-    const { ticketId, masterId } = req.body;
+/**
+ * 4. POST /master/complete — Завершение заявки мастером (Мастер / Админ)
+ */
+router.post('/master/complete', requireAuth(['master', 'admin']), async (req: Request, res: Response): Promise<any> => {
+    const { ticketId } = req.body;
 
-    if (!ticketId || !masterId) {
-        return res.status(400).json({ error: 'Необходимо передать ticketId и masterId' });
+    if (!ticketId) {
+        return res.status(400).json({ error: 'Необходимо передать ticketId' });
     }
 
     try {
-        // Дополнительная проверка, чтобы заявку мог закрыть только тот мастер, который на ней висит
         const existingTicket = await prisma.ticket.findUnique({ where: { id: Number(ticketId) } });
         
-        if (existingTicket?.masterId !== Number(masterId)) {
+        // Авторизованный мастер из куки не должен иметь возможности завершить чужую заявку
+        if (req.user!.role !== 'admin' && existingTicket?.masterId !== req.user!.id) {
             return res.status(403).json({ error: 'Вы не можете завершить чужую заявку' });
         }
 
@@ -117,7 +131,7 @@ router.post('/master/complete', async (req: Request, res: Response): Promise<any
             where: { id: Number(ticketId) },
             data: {
                 status: 'completed',
-                completedAt: new Date() // Фиксируем время завершения
+                completedAt: new Date()
             }
         });
 
@@ -128,31 +142,17 @@ router.post('/master/complete', async (req: Request, res: Response): Promise<any
     }
 });
 
-router.post('/dispatcher/close', async (req: Request, res: Response): Promise<any> => {
-    // Добавляем userId в деструктуризацию тела запроса
-    const { ticketId, userId } = req.body;
+/**
+ * 5. POST /dispatcher/close — Принудительное закрытие заявки (Диспетчер / Админ)
+ */
+router.post('/dispatcher/close', requireAuth(['dispatcher', 'admin']), async (req: Request, res: Response): Promise<any> => {
+    const { ticketId } = req.body;
 
-    if (!ticketId || !userId) {
-        return res.status(400).json({ error: 'Необходимо передать ticketId и userId' });
+    if (!ticketId) {
+        return res.status(400).json({ error: 'Необходимо передать ticketId' });
     }
 
     try {
-        // 1. Ищем пользователя в базе, чтобы проверить его роль и компанию
-        const user = await prisma.user.findUnique({
-            where: { id: Number(userId) }
-        });
-
-        if (!user) {
-            return res.status(404).json({ error: 'Пользователь не найден' });
-        }
-
-        // 2. ПРОВЕРКА РОЛИ: Закрывать заявки могут только диспетчеры и админы
-        const userRole = user.role.toLowerCase();
-        if (userRole !== 'dispatcher' && userRole !== 'admin') {
-            return res.status(403).json({ error: 'У вас нет прав для принудительного закрытия заявок' });
-        }
-
-        // 3. Ищем саму заявку
         const ticket = await prisma.ticket.findUnique({
             where: { id: Number(ticketId) }
         });
@@ -161,13 +161,11 @@ router.post('/dispatcher/close', async (req: Request, res: Response): Promise<an
             return res.status(404).json({ error: 'Заявка не найдена' });
         }
 
-        // 4. ПРОВЕРКА КОМПАНИИ: Диспетчер не должен иметь возможности закрыть заявку чужой УК
-        // (Админу разрешаем всё)
-        if (userRole !== 'admin' && ticket.companyId !== user.companyId) {
+        // Диспетчерам запрещено закрывать заявки чужой компании
+        if (req.user!.role !== 'admin' && ticket.companyId !== req.user!.companyId) {
             return res.status(403).json({ error: 'Вы не можете управлять заявками чужой управляющей компании' });
         }
 
-        // 5. Если все барьеры пройдены — обновляем статус на completed
         const updatedTicket = await prisma.ticket.update({
             where: { id: Number(ticketId) },
             data: {
@@ -183,11 +181,13 @@ router.post('/dispatcher/close', async (req: Request, res: Response): Promise<an
     }
 });
 
+/**
+ * 6. POST /tilda-direct-ticket — Публичный эндпоинт заявки с Тильды (БЕЗ auth)
+ */
 router.post('/tilda-direct-ticket', async (req: Request, res: Response): Promise<any> => {
     try {
         const { address, description, type, companyId } = req.body;
         
-        // Генерируем 16-значный токен для ссылки
         const trackingToken = crypto.randomBytes(8).toString('hex');
 
         const newTicket = await prisma.ticket.create({
@@ -196,18 +196,17 @@ router.post('/tilda-direct-ticket', async (req: Request, res: Response): Promise
                 description,
                 type: type || 'regular',
                 status: 'new',
-                companyId, // Должен передаваться из формы (например 'crocus' или 'meridian')
+                companyId,
                 trackingToken
             }
         });
 
-        // Формируем ссылку (замени localhost на свой будущий реальный домен фронтенда)
-        const trackingLink = `http://localhost:5173/status/${trackingToken}`;
+        const clientUrl = (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
+        const trackingLink = `${clientUrl}/status/${trackingToken}`;
 
-        // Возвращаем ссылку фронтенду Тильды
         return res.status(200).json({ 
             success: true, 
-            trackingLink: trackingLink 
+            trackingLink
         }); 
     } catch (error) {
         console.error('Ошибка при создании заявки с Тильды:', error);
@@ -215,34 +214,29 @@ router.post('/tilda-direct-ticket', async (req: Request, res: Response): Promise
     }
 });
 
-// блок с get
-router.get('/my', async (req: Request, res: Response): Promise<any> => {
+/**
+ * 7. GET /my — Личные заявки мастера (Мастер / Админ)
+ */
+router.get('/my', requireAuth(['master', 'admin']), async (req: Request, res: Response): Promise<any> => {
     try {
-        const { companyId, masterId, status } = req.query;
+        const { status } = req.query;
 
-        // Для мастера обязательно знать его ID и компанию
-        if (!companyId || !masterId) {
-            return res.status(400).json({ error: 'Параметры companyId и masterId обязательны' });
-        }
-
+        // masterId и companyId автоматически берутся из куки авторизации!
         const whereClause: any = {
-            companyId: String(companyId),
-            masterId: parseInt(masterId as string) // Жестко фильтруем только по этому мастеру
+            companyId: req.user!.companyId,
+            masterId: req.user!.id
         };
 
-        // Если Петрович хочет посмотреть только активные 'in_work' или только выполненные 'completed'
         if (status) {
             whereClause.status = String(status);
         } else {
-            // По умолчанию на рабочем столе мастера лучше не показывать старый архив,
-            // а выводить только то, что надо делать прямо сейчас
             whereClause.status = { in: ['new', 'in_work'] }; 
         }
 
         const myTickets = await prisma.ticket.findMany({
             where: whereClause,
             orderBy: {
-                createdAt: 'desc' // Свежие аварии — в самый верх списка
+                createdAt: 'desc'
             }
         });
 
@@ -253,47 +247,42 @@ router.get('/my', async (req: Request, res: Response): Promise<any> => {
     }
 });
 
-router.get('/', async (req: Request, res: Response): Promise<any> => {
+/**
+ * 8. GET / — Список всех заявок для рабочего стола (Диспетчер / Админ)
+ */
+router.get('/', requireAuth(['dispatcher', 'admin']), async (req: Request, res: Response): Promise<any> => {
     try {
         const { companyId, masterId, status, type } = req.query;
 
-        if (!companyId) {
-            return res.status(400).json({ error: 'Параметр companyId обязателен' });
-        }
-
         const whereClause: any = {};
 
-        // Проверяем: если пришел массив, передаем его целиком. 
-        // Если пришла одна строка, оборачиваем её в массив [companyId]
-        if (Array.isArray(companyId)) {
-            whereClause.companyId = { in: companyId.map(id => String(id)) };
-        } else {
-            // Если с фронта пришла строка через запятую "uk_vostok,uk_zapad", можно её расплитить
-            if (String(companyId).includes(',')) {
+        // Если с фронта явно передан companyId (например, диспетчер переключает компании)
+        if (companyId) {
+            if (Array.isArray(companyId)) {
+                whereClause.companyId = { in: companyId.map(id => String(id)) };
+            } else if (String(companyId).includes(',')) {
                 const companiesArray = String(companyId).split(',').map(id => id.trim());
                 whereClause.companyId = { in: companiesArray };
             } else {
-                // Если пришла строго одна компания
                 whereClause.companyId = String(companyId);
             }
+        } else {
+            // Если компании не переданы в query — ограничиваем юзера его компанией
+            whereClause.companyId = req.user!.companyId;
         }
 
-        // Логика фильтрации мастеров
         if (masterId === 'null') {
             whereClause.masterId = null;
         } else if (masterId) {
             whereClause.masterId = parseInt(masterId as string);
         }
         
-        // Логика фильтрации статусов
         if (status) {
             whereClause.status = String(status);
         }
         
-        // КСТАТИ: у тебя тут была небольшая бага! 
-        // Вместо жесткого хардкода "emergency", лучше брать значение из type, которое пришло с фронта
         if (type) {
-            whereClause.type = String(type); // 'emergency' или 'regular'
+            whereClause.type = String(type);
         }
 
         const tickets = await prisma.ticket.findMany({

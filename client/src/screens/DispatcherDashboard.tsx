@@ -674,7 +674,7 @@ export default function DispatcherDashboard({ user }: { user: User }) {
 
                 {/* Поле 3: Необязательный телефон */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Номер телефона (необязательно)</label>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Телефон сотрудника</label>
                   <input
                     type="tel"
                     placeholder="79991234567"
@@ -689,7 +689,7 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                   disabled={generateInviteMutation.isPending}
                   className="w-full mt-2 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium text-sm rounded-xl transition-colors disabled:opacity-50"
                 >
-                  {generateInviteMutation.isPending ? 'Генерация...' : 'Создать инвайт'}
+                  {generateInviteMutation.isPending ? 'Генерация...' : 'Отправить приглашение'}
                 </button>
               </form>
             )}

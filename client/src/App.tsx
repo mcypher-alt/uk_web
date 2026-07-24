@@ -108,7 +108,7 @@ export default function App() {
       <div className="min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-white transition-colors duration-200">
         <header className="flex justify-between items-center p-4 border-b border-gray-100 dark:border-gray-800">
           <h1 className="text-xl font-bold">
-            Здравствуйте, {user.name} ({user.role === 'admin' ? 'Админ' : user.role})
+            Здравствуйте, {user.name}
           </h1>
           
           <div className="flex gap-4 items-center">

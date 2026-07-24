@@ -42,6 +42,7 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
         const token = jwt.sign(
         {
             id: user.id,
+            name: user.name,
             role: user.role,
             companyId: user.companyId
         },
@@ -88,6 +89,7 @@ router.get('/me', (req: Request, res: Response): any => {
         // Расшифровываем JWT и проверяем, не протух ли он
         const decoded = jwt.verify(token, JWT_SECRET) as {
             id: number;
+            name: string;
             role: string;
             companyId: string;
         };

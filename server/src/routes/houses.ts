@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
+/**
+ * 1. GET / — Публичный список домов для Тильды или выпадающих списков (БЕЗ auth)
+ */
 router.get('/', async (req: Request, res: Response): Promise<any> => {
     const { companyId } = req.query;
 
@@ -14,10 +18,9 @@ router.get('/', async (req: Request, res: Response): Promise<any> => {
     try {
         const houses = await prisma.house.findMany({
             where: { companyId: String(companyId) },
-            orderBy: { address: 'asc' } // Сортируем по алфавиту, чтобы жильцам было удобно искать
+            orderBy: { address: 'asc' } // Сортируем по алфавиту
         });
 
-        // Возвращаем просто массив строк с адресами, так фронту будет легче
         const addressList = houses.map(h => h.address);
         return res.json({ addresses: addressList });
     } catch (error) {
@@ -26,7 +29,10 @@ router.get('/', async (req: Request, res: Response): Promise<any> => {
     }
 });
 
-router.post('/', async (req: Request, res: Response): Promise<any> => {
+/**
+ * 2. POST / — Добавление нового дома в обслуживаемый фонд (Только Диспетчер / Админ)
+ */
+router.post('/', requireAuth(['dispatcher', 'admin']), async (req: Request, res: Response): Promise<any> => {
     const { address, companyId } = req.body;
 
     if (!address || !companyId) {
@@ -34,11 +40,13 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
     }
 
     try {
+        const cleanAddress = String(address).trim();
+
         // Проверяем, нет ли уже такого дома в этой УК
         const existingHouse = await prisma.house.findUnique({
             where: {
                 address_companyId: {
-                    address: String(address).trim(),
+                    address: cleanAddress,
                     companyId: String(companyId)
                 }
             }
@@ -51,7 +59,7 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
         // Создаем новый дом
         const newHouse = await prisma.house.create({
             data: {
-                address: String(address).trim(),
+                address: cleanAddress,
                 companyId: String(companyId)
             }
         });

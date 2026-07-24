@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import prisma from '../lib/prisma.js'; 
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -35,12 +36,11 @@ router.get('/', async (req: Request, res: Response): Promise<any> => {
     }
     });
 
-router.post('/generate', async (req: Request, res: Response): Promise<any> => {
-    // Достаем phone из body, он может быть, а может и не быть (undefined)
+router.post('/generate', requireAuth(['dispatcher', 'admin']), async (req: Request, res: Response): Promise<any> => {
     const { role, companyId, phone } = req.body;
 
-    if (!role || !companyId) {
-        return res.status(400).json({ error: 'Не указана роль сотрудника или ID компании' });
+    if (!role || !companyId || !phone) {
+        return res.status(400).json({ error: 'Не указана роль сотрудника, ID компании или телефон' });
     }
 
     if (role !== 'dispatcher' && role !== 'master') {
@@ -52,21 +52,18 @@ router.post('/generate', async (req: Request, res: Response): Promise<any> => {
     // === ПРОВЕРКА И ОЧИСТКА ТЕЛЕФОНА (ЕСЛИ ОН ПЕРЕДАН) ===
     let cleanPhone: string | null = null;
     
-    if (phone) {
-        let tempPhone = phone.replace(/\D/g, '');
-        if (tempPhone.startsWith('8') && tempPhone.length === 11) {
-            tempPhone = '7' + tempPhone.slice(1);
-        }
-
-        const phoneRegex = /^79\d{9}$/;
-        if (!phoneRegex.test(tempPhone)) {
-            return res.status(400).json({
-                error: 'Некорректный формат номера телефона для сброса пароля.' 
-            });
-        }
-        cleanPhone = tempPhone; // Если всё ок, сохраняем очищенный номер
+    let tempPhone = phone.replace(/\D/g, '');
+    if (tempPhone.startsWith('8') && tempPhone.length === 11) {
+        tempPhone = '7' + tempPhone.slice(1);
     }
-    // ====================================================
+
+    const phoneRegex = /^79\d{9}$/;
+    if (!phoneRegex.test(tempPhone)) {
+        return res.status(400).json({
+            error: 'Некорректный формат номера телефона (ожидается +79XXXXXXXXX).' 
+        });
+    }
+    cleanPhone = tempPhone; // Если всё ок, сохраняем очищенный номер
 
     try {
         const token = crypto.randomUUID(); 
@@ -84,7 +81,8 @@ router.post('/generate', async (req: Request, res: Response): Promise<any> => {
             }
         });
 
-        const inviteUrl = `http://localhost:5173/?token=${token}`;
+        const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+        const inviteUrl = `${clientUrl}/?token=${token}`;
 
         return res.json({
             success: true,
