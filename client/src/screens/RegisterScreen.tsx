@@ -8,7 +8,6 @@ interface RegisterScreenProps {
 
 export default function RegisterScreen({ token, onRegisterSuccess }: RegisterScreenProps) {
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -17,22 +16,23 @@ export default function RegisterScreen({ token, onRegisterSuccess }: RegisterScr
     e.preventDefault();
     setError(null);
 
-    if (!name.trim() || !phone.trim() || !password.trim()) {
+    if (!name.trim() || !password.trim()) {
       setError('Пожалуйста, заполните все поля формы');
       return;
     }
 
     try {
       setIsLoading(true);
-      const data = await authApi.register({ token, phone, password, name });
+      const data = await authApi.register({ token, password, name });
       
       if (data.success) {
         onRegisterSuccess();
       } else {
-        setError(data.message || 'Не удалось завершить регистрацию');
+        setError(data.error || data.message || 'Не удалось завершить регистрацию');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Ошибка при отправке данных. Проверьте сеть.');
+      const serverError = err.response?.data?.error || err.response?.data?.message;
+      setError(serverError || 'Ошибка при отправке данных. Проверьте сеть.');
     } finally {
       setIsLoading(false);
     }
@@ -64,21 +64,6 @@ export default function RegisterScreen({ token, onRegisterSuccess }: RegisterScr
               className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors text-base"
             />
           </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-              Номер телефона
-            </label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="79991234567"
-              disabled={isLoading}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors text-base"
-            />
-          </div>
-
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
               Придумайте пароль

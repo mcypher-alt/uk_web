@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
 import { ticketsApi, dictApi, authApi } from '../api/index.js';
@@ -120,7 +121,10 @@ export function MasterCell({ ticket }: { ticket: Ticket }) {
       queryClient.invalidateQueries({ queryKey: ['tickets'] });
       setIsOpen(false);
     },
-    onError: (err: any) => alert(err.response?.data?.message || 'Не удалось назначить мастера')
+    onError: (err: any) => {
+    const message = err.response?.data?.error || err.response?.data?.message || 'Не удалось назначить мастера';
+    toast.error(message);
+  }
   });
 
   // Расчет координат для портала
@@ -302,7 +306,10 @@ export default function DispatcherDashboard({ user }: { user: User }) {
   const closeMutation = useMutation({
     mutationFn: (ticketId: number) => ticketsApi.closeByDispatcher({ ticketId, userId: Number(user.id) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tickets'] }),
-    onError: (err: any) => alert(err.response?.data?.message || 'Ошибка при закрытии заявки')
+    onError: (err: any) => {
+    const message = err.response?.data?.error || err.response?.data?.message || 'Ошибка при закрытии заявки';
+    toast.error(message);
+  }
   });
 
   // Подготовка данных для пагинации
@@ -326,6 +333,7 @@ export default function DispatcherDashboard({ user }: { user: User }) {
   // Стейт для хранения сгенерированной ссылки
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
 
   const generateInviteMutation = useMutation({
     mutationFn: (data: typeof inviteForm) => authApi.generateInvite({
@@ -336,12 +344,26 @@ export default function DispatcherDashboard({ user }: { user: User }) {
     onSuccess: (res: any) => {
       setGeneratedLink(res.inviteUrl);
       setInviteError(null);
+      setIsCopied(false);
     },
     onError: (err: any) => {
       setInviteError(err.response?.data?.error || err.response?.data?.message || 'Не удалось сгенерировать инвайт');
       setGeneratedLink(null);
+      setIsCopied(false);
     }
   });
+
+  const handleCopyLink = () => {
+  if (!generatedLink) return;
+  
+  navigator.clipboard.writeText(generatedLink);
+  setIsCopied(true);
+
+  // Возвращаем исходный текст кнопки через 2 секунды
+  setTimeout(() => {
+    setIsCopied(false);
+  }, 2000);
+};
 
   const [isCreateTicketOpen, setIsCreateTicketOpen] = useState(false);
 
@@ -376,7 +398,8 @@ export default function DispatcherDashboard({ user }: { user: User }) {
       setTicketForm({ companyId: userCompanies[0] || '', address: '', description: '', isEmergency: false }); // Чистим форму
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error || err.response?.data?.message || 'Не удалось создать заявку');
+      const message = err.response?.data?.error || err.response?.data?.message || 'Не удалось создать заявку';
+      toast.error(message);
     }
   });
 
@@ -621,13 +644,16 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                   className="w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl text-sm focus:outline-none select-all font-mono resize-none h-20"
                 />
                 <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(generatedLink);
-                    alert('Ссылка скопирована в буфер обмена!');
-                  }}
-                  className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium text-sm rounded-xl transition-colors"
+                  type="button"
+                  onClick={handleCopyLink}
+                  disabled={isCopied}
+                  className={`w-full py-2.5 font-medium text-sm rounded-xl transition-all duration-200 ${
+                    isCopied
+                      ? 'bg-emerald-700 text-white cursor-default'
+                      : 'bg-green-600 hover:bg-green-700 text-white active:scale-[0.99]'
+                  }`}
                 >
-                  Скопировать ссылку
+                  {isCopied ? '✓ Ссылка скопирована!' : 'Скопировать ссылку'}
                 </button>
               </div>
             ) : (
@@ -713,12 +739,20 @@ export default function DispatcherDashboard({ user }: { user: User }) {
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Зарегистрировать новую проблему жильца в системе</p>
 
             <form 
+              noValidate
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!ticketForm.address || !ticketForm.description.trim()) {
-                  alert('Выберите адрес и заполните описание проблемы!');
+                
+                if (!ticketForm.address) {
+                  toast.error('Выберите адрес!');
                   return;
                 }
+                
+                if (!ticketForm.description.trim()) {
+                  toast.error('Заполните описание проблемы!');
+                  return;
+                }
+
                 createTicketMutation.mutate(ticketForm);
               }}
               className="space-y-4"

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Toaster } from 'sonner';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { User } from './types.ts';
 import LoginScreen from './screens/LoginScreen.js';
@@ -105,6 +106,7 @@ export default function App() {
   // Основной интерфейс для авторизованных пользователей
   return (
     <QueryClientProvider client={queryClient}>
+      <Toaster position="top-right" richColors />
       <div className="min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-white transition-colors duration-200">
         <header className="flex justify-between items-center p-4 border-b border-gray-100 dark:border-gray-800">
           <h1 className="text-xl font-bold">

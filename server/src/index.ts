@@ -3,6 +3,7 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import usersRouter from './routes/users.js';
 import ticketsRouter from './routes/tickets.js';
 import metersRouter from './routes/meters.js';
@@ -19,6 +20,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(cookieParser());
+app.use(helmet());
 
 app.use('/api/houses', houseRouter);
 app.use('/api/users', usersRouter);

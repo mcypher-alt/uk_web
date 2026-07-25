@@ -14,7 +14,6 @@ if (parts.length > 1 && parts[0] !== 'localhost') {
   axios.defaults.headers.common['X-Subdomain'] = parts[0]; 
 }
 
-
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

@@ -77,7 +77,7 @@ router.post('/generate', requireAuth(['dispatcher', 'admin']), async (req: Reque
                 role,
                 companyId,
                 expiresAt,
-                phone: cleanPhone // Сюда улетит либо '79991112233', либо null (если это новый юзер)
+                phone: cleanPhone
             }
         });
 
@@ -100,28 +100,14 @@ router.post('/generate', requireAuth(['dispatcher', 'admin']), async (req: Reque
      * Финальный этап: создание сотрудника в БД и деактивация токена
      */
 router.post('/', async (req: Request, res: Response): Promise<any> => {
-    const { token, phone, password, name } = req.body;
+    const { token, password, name } = req.body;
 
     if (!token) {
     return res.status(400).json({ error: 'Отсутствует токен приглашения. Доступ запрещен.' });
     }
 
-    if (!phone || !password || !name) {
+    if (!password || !name) {
     return res.status(400).json({ error: 'Пожалуйста, заполните все поля формы: Имя, Логин и Пароль' });
-    }
-
-    let cleanPhone = phone.replace(/\D/g, '');
-
-    if (cleanPhone.startsWith('8') && cleanPhone.length === 11) {
-        cleanPhone = '7' + cleanPhone.slice(1);
-    }
-
-    const phoneRegex = /^79\d{9}$/;
-
-    if (!phoneRegex.test(cleanPhone)) {
-        return res.status(400).json({
-        error: 'Некорректный формат номера. Введите правильный мобильный телефон (например, +7 (999) 123-45-67)' 
-        });
     }
 
     try {
@@ -132,10 +118,13 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
         if (!invite || invite.isUsed || new Date() > invite.expiresAt) {
         return res.status(400).json({ error: 'Токен безопасности невалиден' });
         }
-        if (invite.phone && invite.phone !== cleanPhone) {
-            return res.status(403).json({ error: 'Этот инвайт-токен предназначен для другого номера телефона' });
-        }
 
+        const cleanPhone = invite.phone;
+
+        if (!cleanPhone) {
+            return res.status(400).json({ error: 'В данном приглашении не указан номер телефона' });
+        }
+        
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // Запускаем транзакцию: если что-то упадет (например, логин уже занят), 
