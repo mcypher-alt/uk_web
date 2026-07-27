@@ -1,5 +1,6 @@
 import { Router} from 'express';
 import type { Request, Response } from 'express';
+import formatPhone from '../helper/formatPhone.js';
 import prisma from '../lib/prisma.js'; 
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
@@ -49,21 +50,7 @@ router.post('/generate', requireAuth(['dispatcher', 'admin']), async (req: Reque
         });
     }
 
-    // === ПРОВЕРКА И ОЧИСТКА ТЕЛЕФОНА (ЕСЛИ ОН ПЕРЕДАН) ===
-    let cleanPhone: string | null = null;
-    
-    let tempPhone = phone.replace(/\D/g, '');
-    if (tempPhone.startsWith('8') && tempPhone.length === 11) {
-        tempPhone = '7' + tempPhone.slice(1);
-    }
-
-    const phoneRegex = /^79\d{9}$/;
-    if (!phoneRegex.test(tempPhone)) {
-        return res.status(400).json({
-            error: 'Некорректный формат номера телефона (ожидается +79XXXXXXXXX).' 
-        });
-    }
-    cleanPhone = tempPhone; // Если всё ок, сохраняем очищенный номер
+    let cleanPhone = formatPhone(phone); // Если всё ок, сохраняем очищенный номер
 
     try {
         const token = crypto.randomUUID(); 
@@ -119,7 +106,7 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
         return res.status(400).json({ error: 'Токен безопасности невалиден' });
         }
 
-        const cleanPhone = invite.phone;
+        const cleanPhone = formatPhone(invite.phone);
 
         if (!cleanPhone) {
             return res.status(400).json({ error: 'В данном приглашении не указан номер телефона' });

@@ -65,3 +65,24 @@ export const dictApi = {
   },
 };
 
+const cleanPhone = (phone: string): string => phone.replace(/\D/g, '');
+
+export const passwordApi = {
+  // 1. Запрос кода подтверждения (MOCK SMS)
+  forgotPassword: async (phone: string) => {
+    const res = await api.post('/password/forgot-password', {
+      phone: cleanPhone(phone),
+    });
+    return res.data;
+  },
+
+  // 2. Сброс пароля (передаем очищенный телефон, код и новый пароль)
+  resetPassword: async (data: { phone: string; code: string; newPassword: string }) => {
+    const res = await api.post('/password/reset-password', {
+      phone: cleanPhone(data.phone),
+      code: data.code,
+      newPassword: data.newPassword,
+    });
+    return res.data;
+  },
+};

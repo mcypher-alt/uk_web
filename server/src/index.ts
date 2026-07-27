@@ -9,7 +9,8 @@ import ticketsRouter from './routes/tickets.js';
 import metersRouter from './routes/meters.js';
 import loginRouter from './routes/login.js';
 import registrationRouter from './routes/registration.js';
-import houseRouter from './routes/houses.js'
+import houseRouter from './routes/houses.js';
+import passwordRouter from './routes/password.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -22,6 +23,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(helmet());
 
+app.use('/api/password', passwordRouter);
 app.use('/api/houses', houseRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/tickets', ticketsRouter);

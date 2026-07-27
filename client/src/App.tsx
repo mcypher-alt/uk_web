@@ -6,6 +6,7 @@ import LoginScreen from './screens/LoginScreen.js';
 import RegisterScreen from './screens/RegisterScreen.js';
 import DispatcherDashboard from './screens/DispatcherDashboard.js';
 import MasterDashboard from './screens/MasterDashboard.js';
+import ResetPasswordScreen from './screens/ResetPasswordScreen.js'; // <-- Добавили импорт
 import { authApi } from './api/index.js';
 
 const queryClient = new QueryClient();
@@ -17,21 +18,19 @@ const getInviteParams = () => {
 };
 
 export default function App() {
-  // 1. Инициализируем юзера как null (никакого localStorage)
   const [user, setUser] = useState<User | null>(null);
-  
-  // 2. Флаг загрузки, чтобы дождаться ответа от бэкенда
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
-  // Тему оставляем в localStorage
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
   });
 
   const [inviteParams] = useState(() => getInviteParams());
   const [isRegistering, setIsRegistering] = useState(!!inviteParams.token);
+  
+  // <-- Новый стейт для экрана восстановления пароля
+  const [showForgotPassword, setShowForgotPassword] = useState(false); 
 
-  // 3. Проверка сессии при запуске приложения через authApi
   useEffect(() => {
     const checkSession = async () => {
       try {
@@ -40,17 +39,14 @@ export default function App() {
           setUser(response.user);
         }
       } catch (error) {
-        // Ошибка (например, 401) означает, что куки нет или она невалидна
         setUser(null);
       } finally {
-        setIsAuthLoading(false); // Выключаем спиннер загрузки
+        setIsAuthLoading(false);
       }
     };
-
     checkSession();
   }, []);
 
-  // Переключение темы
   useEffect(() => {
     const root = window.document.documentElement;
     if (theme === 'dark') {
@@ -61,12 +57,10 @@ export default function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // Обновление стейта после успешного входа
   const handleLogin = (loggedUser: User) => {
     setUser(loggedUser);
   };
 
-  // 4. Асинхронный логаут через authApi
   const handleLogout = async () => {
     try {
       await authApi.logout();
@@ -77,7 +71,6 @@ export default function App() {
     }
   };
 
-  // Показываем загрузочный экран, пока бэкенд проверяет куку
   if (isAuthLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
@@ -86,7 +79,7 @@ export default function App() {
     );
   }
 
-  // Роутинг для неавторизованных пользователей (регистрация или логин)
+  // === РОУТИНГ БЕЗ АВТОРИЗАЦИИ ===
   if (!user) {
     if (isRegistering && inviteParams.token) {
       return (
@@ -100,10 +93,24 @@ export default function App() {
       );
     }
 
-    return <LoginScreen onLogin={handleLogin} />;
+    // <-- Показываем экран восстановления, если стейт активен
+    if (showForgotPassword) {
+      return <ResetPasswordScreen onBackToLogin={() => setShowForgotPassword(false)} />;
+    }
+
+    // <-- Прокидываем функцию в LoginScreen для переключения
+    return (
+      <LoginScreen 
+        onLogin={handleLogin} 
+        onForgotPassword={() => {
+          setIsRegistering(false); // <-- Гарантированно выключаем экран регистрации
+          setShowForgotPassword(true);
+        }}
+      />
+    );
   }
 
-  // Основной интерфейс для авторизованных пользователей
+  // === ОСНОВНОЙ ИНТЕРФЕЙС ===
   return (
     <QueryClientProvider client={queryClient}>
       <Toaster position="top-right" richColors />

@@ -149,6 +149,7 @@ async function main() {
     data: {
       token: 'test-master-token',
       role: 'master',
+      phone: '79822802456',
       companyId: crocus.id,
       expiresAt: expires,
     },

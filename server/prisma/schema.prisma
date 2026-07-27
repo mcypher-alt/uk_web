@@ -44,7 +44,7 @@ model ValidToken {
   id        Int      @id @default(autoincrement())
   token     String   @unique
   role      String   // "DISPATCHER" или "MASTER"
-  phone     String?
+  phone     String
   companyId String   // К какой УК привязан инвайт
   isUsed    Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -83,4 +83,12 @@ model MeterReading {
   createdAt DateTime @default(now())
 
   @@map("meter_readings")
+}
+
+model PasswordReset {
+  id        Int      @id @default(autoincrement())
+  phone     String   @unique
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
