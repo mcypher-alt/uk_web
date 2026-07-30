@@ -274,7 +274,10 @@ export default function DispatcherDashboard({ user }: { user: User }) {
   }, [filters]);
 
   const queryClient = useQueryClient();
-  const userCompanies = Array.isArray(user.companyId) ? user.companyId : [user.companyId];
+  const userCompanies = (() => {
+    if (!user?.companyId) return [];
+    return Array.isArray(user.companyId) ? user.companyId : [user.companyId];
+  })();
 
   // Грузим заявки
   const { data: rawTicketsData, isLoading: isTicketsLoading } = useQuery({
@@ -320,17 +323,15 @@ export default function DispatcherDashboard({ user }: { user: User }) {
     currentPage * TICKETS_PER_PAGE
   );
 
-  // Состояние открытия модалки
+  // ===============================================
+  // СТЕЙТЫ И МУТАЦИИ ДЛЯ СОЗДАНИЯ СОТРУДНИКА
+  // ===============================================
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
-
-  // Поля формы создания сотрудника
   const [inviteForm, setInviteForm] = useState({
-    companyId: userCompanies[0] || '',
+    companyId: userCompanies[0] || '', // Сброшен хардкод
     role: user.role === 'admin' ? 'dispatcher' : 'master',
     phone: ''
   });
-
-  // Стейт для хранения сгенерированной ссылки
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
@@ -339,7 +340,7 @@ export default function DispatcherDashboard({ user }: { user: User }) {
     mutationFn: (data: typeof inviteForm) => authApi.generateInvite({
       role: data.role,
       companyId: data.companyId,
-      phone: data.phone.trim() ? data.phone.trim() : undefined // Если пусто — шлем undefined
+      phone: data.phone.trim() ? data.phone.trim() : undefined
     }),
     onSuccess: (res: any) => {
       setGeneratedLink(res.inviteUrl);
@@ -354,33 +355,56 @@ export default function DispatcherDashboard({ user }: { user: User }) {
   });
 
   const handleCopyLink = () => {
-  if (!generatedLink) return;
-  
-  navigator.clipboard.writeText(generatedLink);
-  setIsCopied(true);
+    if (!generatedLink) return;
+    navigator.clipboard.writeText(generatedLink);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
+  };
 
-  // Возвращаем исходный текст кнопки через 2 секунды
-  setTimeout(() => {
-    setIsCopied(false);
-  }, 2000);
-};
+  // ===============================================
+  // СТЕЙТЫ И МУТАЦИЯ ДЛЯ ДОБАВЛЕНИЯ ДОМА
+  // ===============================================
+  const [isAddHouseOpen, setIsAddHouseOpen] = useState(false);
+  const [houseForm, setHouseForm] = useState({
+    companyId: userCompanies[0] || '', // Сброшен хардкод
+    address: ''
+  });
 
+  const createHouseMutation = useMutation({
+    mutationFn: async (data: typeof houseForm) => {
+      return await dictApi.postHouses({
+        companyId: data.companyId,
+        address: data.address.trim(),
+      });
+    },
+    onSuccess: () => {
+      toast.success('Дом успешно добавлен в базу!');
+      setIsAddHouseOpen(false);
+      // Гарантированно берем актуальную первую УК из массива
+      setHouseForm({ companyId: userCompanies[0] || '', address: '' });
+      queryClient.invalidateQueries({ queryKey: ['houses'] });
+    },
+    onError: (err: any) => {
+      console.error('Ошибка добавления дома:', err);
+      const message = err.response?.data?.error || err.response?.data?.message || 'Ошибка при добавлении дома';
+      toast.error(message);
+    }
+  });
+
+  // ===============================================
+  // СТЕЙТЫ И МУТАЦИЯ ДЛЯ ЗАЯВОК
+  // ===============================================
   const [isCreateTicketOpen, setIsCreateTicketOpen] = useState(false);
-
-  // Дефолтные поля формы заявки
   const [ticketForm, setTicketForm] = useState({
-    companyId: userCompanies[0] || 'crocus', // Берём первую компанию из массива юзера (например, 'crocus')
+    companyId: userCompanies[0] || '', // Сброшен хардкод
     address: '',
     description: '',
     isEmergency: false
   });
 
   const { data: houses = [], isLoading: isHousesLoading } = useQuery({
-    // queryKey теперь зависит от ticketForm.companyId. 
-    // При смене компании React Query сам перезапустит запрос!
     queryKey: ['houses', ticketForm.companyId],
     queryFn: () => dictApi.getHouses(ticketForm.companyId),
-    // Оптимизация: делаем запрос только если модалка открыта и компания выбрана
     enabled: isCreateTicketOpen && !!ticketForm.companyId, 
   });
 
@@ -389,13 +413,12 @@ export default function DispatcherDashboard({ user }: { user: User }) {
       companyId: data.companyId,
       address: data.address.trim(),
       description: data.description.trim(),
-      type: data.isEmergency ? 'emergency' : 'regular' // Конвертируем булево значение в строку для бэка
+      type: data.isEmergency ? 'emergency' : 'regular' 
     }),
     onSuccess: () => {
-      // Сбрасываем кэш заявок, чтобы новая сразу появилась в таблице
       queryClient.invalidateQueries({ queryKey: ['tickets'] });
-      setIsCreateTicketOpen(false); // Закрываем окно
-      setTicketForm({ companyId: userCompanies[0] || '', address: '', description: '', isEmergency: false }); // Чистим форму
+      setIsCreateTicketOpen(false);
+      setTicketForm({ companyId: userCompanies[0] || '', address: '', description: '', isEmergency: false });
     },
     onError: (err: any) => {
       const message = err.response?.data?.error || err.response?.data?.message || 'Не удалось создать заявку';
@@ -418,7 +441,7 @@ export default function DispatcherDashboard({ user }: { user: User }) {
           <h2 className="text-2xl font-bold">Панель диспетчера</h2>
         </div>
         
-        <div className="flex gap-4 items-center">
+        <div className="flex gap-3 items-center">
           <label className="flex items-center gap-2 text-sm text-red-600 dark:text-red-500 font-bold cursor-pointer select-none px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
             <input 
               type="checkbox" 
@@ -453,7 +476,7 @@ export default function DispatcherDashboard({ user }: { user: User }) {
           </select>
 
           <select 
-            className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none transition-colors"
+            className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none transition-colors mr-2"
             value={filters.status}
             onChange={(e) => setFilters(p => ({ ...p, status: e.target.value }))}
           >
@@ -462,18 +485,33 @@ export default function DispatcherDashboard({ user }: { user: User }) {
             <option value="in_work">В процессе</option>
             <option value="completed">Завершен</option>
           </select>
+
+          {/* КНОПКА ДОБАВЛЕНИЯ ДОМА */}
           <button
             onClick={() => {
-              // Принудительно выставляем рабочую компанию перед открытием модалки
-              setTicketForm(p => ({ ...p, companyId: userCompanies[0] || 'crocus', address: '' }));
+              setHouseForm({ companyId: userCompanies[0] || '', address: '' });
+              setIsAddHouseOpen(true);
+            }}
+            className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm"
+          >
+            + Добавить дом
+          </button>
+
+          {/* КНОПКА НОВАЯ ЗАЯВКА */}
+          <button
+            onClick={() => {
+              setTicketForm({ companyId: userCompanies[0] || '', address: '', description: '', isEmergency: false });
               setIsCreateTicketOpen(true);
             }}
             className="bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm"
           >
             + Новая заявка
           </button>
+          
+          {/* КНОПКА СОЗДАТЬ СОТРУДНИКА */}
           <button
             onClick={() => {
+              setInviteForm(p => ({ ...p, companyId: userCompanies[0] || '', phone: '' }));
               setGeneratedLink(null);
               setInviteError(null);
               setIsInviteModalOpen(true);
@@ -506,7 +544,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700 text-gray-700 dark:text-gray-300">
-                  {/* ИСПОЛЬЗУЕМ paginatedTickets ВМЕСТО tickets */}
                   {paginatedTickets.map(ticket => (
                     <tr key={ticket.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group">
                       <td className="px-6 py-4 font-bold text-gray-900 dark:text-white">
@@ -520,7 +557,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                             <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 w-max">
                               Экстренная
                             </span>
-                            {/* Если заявка еще активна — крутим таймер в реальном времени */}
                             {ticket.status !== 'completed' && (
                               <EmergencyTimer createdAt={ticket.createdAt} />
                             )}
@@ -535,7 +571,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                         <StatusBadge status={ticket.status} />
                       </td>
                       <td className="px-6 py-4">
-                        {/* Вызываем наш обновленный микро-компонент */}
                         <MasterCell ticket={ticket} />
                       </td>
                       <td className="px-6 py-4 text-gray-500">
@@ -544,15 +579,14 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                       <td className="px-6 py-4 text-right">
                       {ticket.status !== 'completed' && (
                         ticketIdToConfirm === ticket.id ? (
-                          // СОСТОЯНИЕ ПОДТВЕРЖДЕНИЯ
                           <div 
                             className="flex flex-col items-end gap-2 opacity-100 transition-all w-32 ml-auto"
-                            onMouseLeave={() => setTicketIdToConfirm(null)} // Сбрасываем, если убрали мышку
+                            onMouseLeave={() => setTicketIdToConfirm(null)}
                             >
                             <button
                               onClick={() => {
                                 closeMutation.mutate(ticket.id);
-                                setTicketIdToConfirm(null); // Закрываем стейт после клика
+                                setTicketIdToConfirm(null);
                               }}
                               className="w-full bg-red-600 hover:bg-red-700 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm text-center"
                             >
@@ -566,7 +600,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                             </button>
                           </div>
                         ) : (
-                          // ОБЫЧНОЕ СОСТОЯНИЕ (появляется при наведении)
                           <button 
                             onClick={() => setTicketIdToConfirm(ticket.id)}
                             className="text-gray-400 hover:text-red-600 font-medium text-base transition-colors px-6 py-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/30 opacity-0 group-hover:opacity-100"
@@ -582,7 +615,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
               </table>
             </div>
 
-            {/* БЛОК ПАГИНАЦИИ */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 mt-auto">
                 <span className="text-sm text-gray-500 dark:text-gray-400">
@@ -610,7 +642,11 @@ export default function DispatcherDashboard({ user }: { user: User }) {
         )}
       </div>
 
-      {/* МОДАЛЬНОЕ ОКНО СОЗДАНИЯ СОТРУДНИКА */}
+      {/* =========================================
+          МОДАЛЬНЫЕ ОКНА
+          ========================================= */}
+
+      {/* 1. СОЗДАНИЕ СОТРУДНИКА */}
       {isInviteModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
           <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl max-w-md w-full p-6 text-gray-900 dark:text-white relative">
@@ -632,7 +668,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
             )}
 
             {generatedLink ? (
-              // ЕСЛИ ССЫЛКА СГЕНЕРИРОВАНА УСПЕШНО
               <div className="space-y-4">
                 <div className="p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 text-xs rounded-lg font-medium">
                   Ссылка успешно создана! Скопируйте её и передайте сотруднику:
@@ -657,7 +692,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                 </button>
               </div>
             ) : (
-              // ФОРМА ВВОДА ДАННЫХ
               <form 
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -665,7 +699,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                 }}
                 className="space-y-4"
               >
-                {/* Поле 1: Выбор компании */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Компания</label>
                   <select
@@ -673,13 +706,13 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                     value={inviteForm.companyId}
                     onChange={(e) => setInviteForm(p => ({ ...p, companyId: e.target.value }))}
                   >
+                    {userCompanies.length === 0 && <option value="" disabled>Загрузка...</option>}
                     {userCompanies.map(id => (
                       <option key={id} value={id}>{id === 'crocus' ? 'АО Крокус' : id === 'meridian' ? 'Меридиан' : id}</option>
                     ))}
                   </select>
                 </div>
 
-                {/* Поле 2: Выбор Роли */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Роль сотрудника</label>
                   <select
@@ -698,7 +731,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                   </select>
                 </div>
 
-                {/* Поле 3: Необязательный телефон */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Телефон сотрудника</label>
                   <input
@@ -723,7 +755,80 @@ export default function DispatcherDashboard({ user }: { user: User }) {
         </div>
       )}
 
-      {/* МОДАЛЬНОЕ ОКНО СОЗДАНИЯ ЗАЯВКИ */}
+      {/* 2. ДОБАВЛЕНИЕ ДОМА */}
+      {isAddHouseOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl max-w-md w-full p-6 text-gray-900 dark:text-white relative">
+            
+            <button 
+              onClick={() => setIsAddHouseOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-white text-lg font-bold transition-colors"
+            >
+              ✕
+            </button>
+
+            <h3 className="text-xl font-bold mb-1">Добавление нового дома</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Зарегистрировать новый адрес в базе Управляющей Компании</p>
+
+            <form 
+              noValidate
+              onSubmit={(e) => {
+                e.preventDefault();
+                
+                if (!houseForm.companyId) {
+                  toast.error('Выберите управляющую компанию!');
+                  return;
+                }
+
+                if (!houseForm.address.trim()) {
+                  toast.error('Введите адрес дома!');
+                  return;
+                }
+
+                createHouseMutation.mutate(houseForm);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Управляющая компания</label>
+                <select
+                  className="w-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none"
+                  value={houseForm.companyId}
+                  onChange={(e) => setHouseForm(p => ({ ...p, companyId: e.target.value }))}
+                >
+                  {userCompanies.length === 0 && <option value="" disabled>Загрузка...</option>}
+                  {userCompanies.map(id => (
+                    <option key={id} value={id}>
+                      {id === 'crocus' ? 'АО Крокус' : id === 'meridian' ? 'Меридиан' : id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Адрес дома</label>
+                <input
+                  type="text"
+                  placeholder="Например: ул. Ленина, д. 10"
+                  className="w-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
+                  value={houseForm.address}
+                  onChange={(e) => setHouseForm(p => ({ ...p, address: e.target.value }))}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={createHouseMutation.isPending}
+                className="w-full mt-2 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-medium text-sm rounded-xl transition-colors disabled:opacity-50 shadow-md flex justify-center items-center gap-2"
+              >
+                {createHouseMutation.isPending ? 'Добавление...' : 'Добавить адрес'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 3. СОЗДАНИЕ ЗАЯВКИ */}
       {isCreateTicketOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
           <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl max-w-md w-full p-6 text-gray-900 dark:text-white relative">
@@ -757,7 +862,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
               }}
               className="space-y-4"
             >
-              {/* Выбор УК */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Управляющая компания</label>
                 <select
@@ -765,13 +869,13 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                   value={ticketForm.companyId}
                   onChange={(e) => setTicketForm(p => ({ ...p, companyId: e.target.value, address: '' }))}
                 >
+                  {userCompanies.length === 0 && <option value="" disabled>Загрузка...</option>}
                   {userCompanies.map(id => (
                     <option key={id} value={id}>{id === 'crocus' ? 'АО Крокус' : id === 'meridian' ? 'Меридиан' : id}</option>
                   ))}
                 </select>
               </div>
 
-              {/* Ввод адреса */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Адрес дома</label>
                 <select
@@ -784,11 +888,14 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                   <option value="" disabled>
                     {isHousesLoading ? 'Загрузка списка домов...' : 'Выберите адрес из списка...'}
                   </option>
-                  {houses.map((address: string, index: number) => (
-                    <option key={index} value={address}>
-                      {address}
-                    </option>
-                  ))}
+                  {houses.map((house: any, index: number) => {
+                    const houseAddress = typeof house === 'string' ? house : house.address;
+                    return (
+                      <option key={index} value={houseAddress}>
+                        {houseAddress}
+                      </option>
+                    )
+                  })}
                 </select>
                 
                 {!isHousesLoading && houses.length === 0 && (
@@ -796,7 +903,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                 )}
               </div>
 
-              {/* Текст проблемы */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Описание проблемы</label>
                 <textarea
@@ -808,7 +914,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
                 />
               </div>
 
-              {/* Чекбокс Экстренно */}
               <div className="pt-1">
                 <label className="flex items-center gap-3 cursor-pointer select-none text-red-600 dark:text-red-400 font-bold text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-xl border border-red-200 dark:border-red-900/50 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">
                   <input 

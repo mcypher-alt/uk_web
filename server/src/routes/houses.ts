@@ -33,41 +33,50 @@ router.get('/', async (req: Request, res: Response): Promise<any> => {
  * 2. POST / — Добавление нового дома в обслуживаемый фонд (Только Диспетчер / Админ)
  */
 router.post('/', requireAuth(['dispatcher', 'admin']), async (req: Request, res: Response): Promise<any> => {
-    const { address, companyId } = req.body;
+    // 1. Сразу чистим пробелы и приводим к строке
+    const cleanAddress = String(req.body.address || '').trim();
+    const targetCompanyId = String(req.body.companyId || '').trim();
 
-    if (!address || !companyId) {
-        return res.status(400).json({ error: 'Необходимо передать address и companyId' });
+    // 2. Валидация
+    if (!targetCompanyId || !cleanAddress) {
+        return res.status(400).json({ error: 'Поля companyId и address обязательны' });
+    }
+
+    if (cleanAddress.length < 3 || cleanAddress.length > 200) {
+        return res.status(400).json({ error: 'Длина адреса должна быть от 3 до 200 символов' });
     }
 
     try {
-        const cleanAddress = String(address).trim();
-
-        // Проверяем, нет ли уже такого дома в этой УК
-        const existingHouse = await prisma.house.findUnique({
+        // 3. Проверяем дубликат
+        const houseExists = await prisma.house.findUnique({
             where: {
                 address_companyId: {
                     address: cleanAddress,
-                    companyId: String(companyId)
+                    companyId: targetCompanyId
                 }
             }
         });
 
-        if (existingHouse) {
-            return res.status(400).json({ error: 'Этот адрес уже зарегистрирован в данной УК' });
+        if (houseExists) {
+            return res.status(400).json({ 
+                error: 'Этот адрес уже зарегистрирован в данной УК' 
+            });
         }
 
-        // Создаем новый дом
+        // 4. Создаем дом
         const newHouse = await prisma.house.create({
             data: {
                 address: cleanAddress,
-                companyId: String(companyId)
+                company: {
+                    connect: { id: targetCompanyId }
+                }
             }
         });
 
-        return res.status(201).json({ success: true, house: newHouse });
+        return res.status(201).json({ house: newHouse });
     } catch (error) {
         console.error('Ошибка при создании дома:', error);
-        return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+        return res.status(500).json({ error: 'Не удалось сохранить дом в базу' });
     }
 });
 

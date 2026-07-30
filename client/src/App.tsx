@@ -64,6 +64,7 @@ export default function App() {
   const handleLogout = async () => {
     try {
       await authApi.logout();
+      queryClient.clear();
     } catch (error) {
       console.error('Ошибка при выходе:', error);
     } finally {

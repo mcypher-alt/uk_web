@@ -49,12 +49,16 @@ export const dictApi = {
   getHouses: async (companyId: string) => {
     const res = (await api.get('/houses', { params: { companyId } })).data;
     
-    // Если бэк вернул чистый массив (на всякий случай)
     if (Array.isArray(res)) return res;
     
-    // ИСПРАВЛЕНО: Забираем массив строк из ключа .addresses, который шлет твой бэк
     return res?.addresses || res?.houses || res?.data || [];
   },
+  postHouses: async (data: { address: string; companyId: string }) => {
+  const { data: responseData } = await api.post('/houses', data);
+  
+  // Бэкенд возвращает { house: ... }, берем его. Если что-то пошло не так, возвращаем весь объект
+  return responseData?.house || responseData;
+},
 
   // ИСПРАВЛЕНО: Теперь эта функция ВСЕГДА возвращает чистый массив, 
   // вытаскивая его из твоего ключа { masters: [...] }

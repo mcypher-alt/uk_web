@@ -90,20 +90,31 @@ router.get('/me', (req: Request, res: Response): any => {
     }
 
     try {
-        // Расшифровываем JWT и проверяем, не протух ли он
+        // Расшифровываем JWT
         const decoded = jwt.verify(token, JWT_SECRET) as {
             id: number;
             name: string;
             role: string;
-            companyId: string;
+            companyId: string | string[];
         };
+
+        // Логика расширения прав для диспетчера и админа
+        let userCompanies: string | string[] = decoded.companyId;
+
+        if (decoded.role === 'dispatcher' || decoded.role === 'admin') {
+            // Для диспетчеров и админов отдаем полный список УК
+            userCompanies = ['crocus', 'meridian'];
+        }
 
         return res.json({ 
             authenticated: true, 
-            user: decoded 
+            user: {
+                ...decoded,
+                companyId: userCompanies
+            }
         });
     } catch (error) {
-        // Если токен подделан или истек срок (7 дней) — стираем плохую куку
+        // Если токен подделан или истек срок — стираем куку
         res.clearCookie('token');
         return res.status(401).json({ authenticated: false, error: 'Сессия истекла' });
     }
