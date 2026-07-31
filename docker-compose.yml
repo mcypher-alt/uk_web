@@ -7,13 +7,15 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
       POSTGRES_DB: uk_web_db
+    env_file:
+      - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   server:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .             # <-- Сборка идет из КОРНЯ проекта
+      dockerfile: server/Dockerfile
     container_name: uk_web_server
     restart: always
     env_file:
@@ -25,12 +27,12 @@ services:
 
   client:
     build:
-      context: ./client
-      dockerfile: Dockerfile
+      context: .             # <-- Сборка идет из КОРНЯ проекта
+      dockerfile: client/Dockerfile
     container_name: uk_web_client
     restart: always
     ports:
-      - "3000:80"       # Тот самый порт 3000, на который завязан твой Nginx!
+      - "3000:80"
     depends_on:
       - server
 
