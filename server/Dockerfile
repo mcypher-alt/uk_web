@@ -11,6 +11,7 @@ COPY server/prisma ./server/prisma/
 RUN npm ci
 
 # Копируем весь исходный код
+COPY tsconfig*.json ./
 COPY server ./server
 
 WORKDIR /app/server

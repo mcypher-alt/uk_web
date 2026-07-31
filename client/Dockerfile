@@ -1,15 +1,18 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Копируем корневые файлы монорепозитория
+# Копируем манифесты монорепозитория
 COPY package*.json ./
 COPY client/package*.json ./client/
 
 # Устанавливаем зависимости
 RUN npm ci
 
-# Копируем исходники клиента и собираем
+# Копируем корневой tsconfig (если он есть) и исходники клиента
+COPY tsconfig*.json ./
 COPY client ./client
+
+# Собираем клиент
 WORKDIR /app/client
 RUN npm run build
 
