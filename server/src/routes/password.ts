@@ -16,33 +16,66 @@ const smsLimiter = rateLimit({
   legacyHeaders: false, // Отключает старые заголовки `X-RateLimit-*`
 });
 
+
 router.post('/forgot-password', smsLimiter, async (req: Request, res: Response): Promise<any> => {
   try {
     const { phone: rawPhone } = req.body;
     if (!rawPhone) return res.status(400).json({ error: 'Укажите номер телефона' });
 
-    const phone = formatPhone(rawPhone);
+    const phone = formatPhone(rawPhone); // Убедись, что формат '79XXXXXXXXX'
     const user = await prisma.user.findUnique({ where: { phone } });
 
-    if (!user) {
-      return res.status(404).json({ error: 'Пользователь с таким номером не найден' });
-    }
+    // --- Интеграция с SMS Aero ---
+    const SMSAERO_LOGIN = process.env.SMSAERO_LOGIN;
+    const SMSAERO_API_KEY = process.env.SMSAERO_API_KEY;
+    const SMSAERO_SIGN = process.env.SMSAERO_SIGN || 'SMS Aero'; // Или твоя подтвержденная подпись из ЛК
+    const CALLBACK_URL = process.env.SMSAERO_CALLBACK_URL || 'https://example.com/callback'
 
-    const mockCode = '1111';
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // +5 минут
+    const authHeader = 'Basic ' + Buffer.from(`${SMSAERO_LOGIN}:${SMSAERO_API_KEY}`).toString('base64');
 
-    // Сохраняем/обновляем код в SQLite
-    await prisma.passwordReset.upsert({
-      where: { phone },
-      update: { code: mockCode, expiresAt },
-      create: { phone, code: mockCode, expiresAt },
+    const aeroResponse = await fetch('https://gate.smsaero.ru/v2/mobile-id/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authHeader
+      },
+      body: JSON.stringify({
+        number: phone,
+        sign: SMSAERO_SIGN,
+        callbackUrl: CALLBACK_URL
+      })
     });
 
-    console.log(`\n[MOCK SMS] Phone: ${phone}, Code: ${mockCode}\n`);
-    return res.json({ message: 'Код для восстановления пароля отправлен' });
+    const aeroData = await aeroResponse.json();
+
+    if (!aeroData.success) {
+      console.error('Ошибка SMS Aero:', aeroData);
+      return res.status(500).json({ error: 'Не удалось отправить запрос на подтверждение' });
+    }
+
+    // Берем ID сессии от SMS Aero (он нам нужен для роута /verify)
+    const sessionId = String(aeroData.data.id); 
+    
+    // Даем пользователю 5 минут на ввод кода
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); 
+
+    // Сохраняем ID сессии в SQLite. 
+    // Я использую твое текущее поле `code` для хранения этого ID.
+    await prisma.passwordReset.upsert({
+      where: { phone },
+      update: { code: sessionId, expiresAt },
+      create: { phone, code: sessionId, expiresAt },
+    });
+
+    console.log(`\n[SMS AERO] Ушел PUSH/SMS на ${phone}, Session ID: ${sessionId}\n`);
+    
+    return res.json({ 
+      message: 'Запрос на подтверждение отправлен.',
+      sessionId: sessionId // <- Обязательно отдаем ID фронтенду!
+    });
 
   } catch (error) {
-    console.error(error);
+    console.error('Ошибка при восстановлении пароля:', error);
     return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
 });
@@ -52,7 +85,7 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<any>
   try {
     const { phone: rawPhone, code, newPassword } = req.body;
 
-    if (!rawPhone || !code || !newPassword) {
+    if (!rawPhone || !newPassword) {
       return res.status(400).json({ error: 'Переданы не все данные' });
     }
 
@@ -60,18 +93,60 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<any>
     const resetRecord = await prisma.passwordReset.findUnique({ where: { phone } });
 
     if (!resetRecord) {
-      return res.status(400).json({ error: 'Код не запрашивался или уже был использован' });
+      return res.status(400).json({ error: 'Сессия сброса не найдена или истекла' });
     }
 
     if (new Date() > resetRecord.expiresAt) {
       await prisma.passwordReset.delete({ where: { phone } });
-      return res.status(400).json({ error: 'Время действия кода истекло' });
+      return res.status(400).json({ error: 'Время действия истекло' });
     }
 
-    if (resetRecord.code !== code) {
-      return res.status(400).json({ error: 'Неверный код подтверждения' });
+    // ---------------------------------------------------------
+    // ЧЕК 1: Если SIM-PUSH уже подтвердился через Callback
+    // ---------------------------------------------------------
+    const isPushApproved = resetRecord.code.startsWith('APPROVED_');
+
+    if (!isPushApproved) {
+      // ---------------------------------------------------------
+      // ЧЕК 2: Если PUSH не был подтвержден, проверяем SMS-код
+      // ---------------------------------------------------------
+      if (!code) {
+        return res.status(400).json({ error: 'Введите SMS-код' });
+      }
+
+      const sessionId = parseInt(resetRecord.code, 10);
+      const SMSAERO_LOGIN = process.env.SMSAERO_LOGIN;
+      const SMSAERO_API_KEY = process.env.SMSAERO_API_KEY;
+      const SMSAERO_SIGN = process.env.SMSAERO_SIGN || 'SMS Aero';
+      const authHeader = 'Basic ' + Buffer.from(`${SMSAERO_LOGIN}:${SMSAERO_API_KEY}`).toString('base64');
+
+      const aeroResponse = await fetch('https://gate.smsaero.ru/v2/mobile-id/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader
+        },
+        body: JSON.stringify({
+          id: sessionId,
+          sign: SMSAERO_SIGN,
+          code: String(code)
+        })
+      });
+
+      if (aeroResponse.status === 400) {
+        return res.status(400).json({ error: 'Неверный код из SMS' });
+      }
+      if (!aeroResponse.ok) {
+        return res.status(500).json({ error: 'Ошибка проверки кода провайдером' });
+      }
+
+      const aeroData = await aeroResponse.json();
+      if (!aeroData.success) {
+        return res.status(400).json({ error: 'Не удалось подтвердить код' });
+      }
     }
 
+    // Если всё ок (либо PUSH подтвержден, либо SMS верный) — обновляем пароль
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     await prisma.$transaction([
@@ -87,7 +162,7 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<any>
     return res.json({ message: 'Пароль успешно изменен' });
 
   } catch (error) {
-    console.error(error);
+    console.error('Ошибка при сбросе пароля:', error);
     return res.status(500).json({ error: 'Ошибка при обновлении пароля' });
   }
 });

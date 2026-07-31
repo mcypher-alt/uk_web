@@ -90,3 +90,15 @@ export const passwordApi = {
     return res.data;
   },
 };
+
+export const mobileApi = {
+  checkStatus: async (sessionId: string) => {
+    const res = await axios.get(`/api/password/check-status/${sessionId}`);
+    return res.data;
+  },
+  // Эндпоинт для SMS Aero (добавлено по твоей просьбе, но в проде фронт его не вызывает)
+  aeroCallback: async (data: { id: number; status: number }) => {
+    const res = await axios.post('/api/password/mobile-id/callback', data);
+    return res.data;
+  }
+}
