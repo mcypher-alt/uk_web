@@ -5,12 +5,10 @@ services:
     restart: always
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
       POSTGRES_DB: uk_web_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
 
   server:
     build:
@@ -18,11 +16,10 @@ services:
       dockerfile: Dockerfile
     container_name: uk_web_server
     restart: always
-    environment:
-      DATABASE_URL: "postgresql://postgres:postgres_password@db:5432/uk_web_db?schema=public"
-      PORT: 5000
-      SMSAERO_LOGIN: ${SMSAERO_LOGIN}
-      SMSAERO_API_KEY: ${SMSAERO_API_KEY}
+    env_file:
+      - ./server/.env
+    ports:
+      - "5000:5000"
     depends_on:
       - db
 
@@ -33,7 +30,7 @@ services:
     container_name: uk_web_client
     restart: always
     ports:
-      - "3000:80"
+      - "3000:80"       # Тот самый порт 3000, на который завязан твой Nginx!
     depends_on:
       - server
 
