@@ -1,16 +1,15 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Копируем корневые файлы монорепозитория
+# Копируем манифесты монорепозитория
 COPY package*.json ./
-# Копируем package.json сервера и схему prisma
 COPY server/package*.json ./server/
 COPY server/prisma ./server/prisma/
 
 # Устанавливаем зависимости с учетом воркспейсов
 RUN npm ci
 
-# Копируем весь исходный код
+# Копируем конфиг TS и исходники бэкенда
 COPY tsconfig*.json ./
 COPY server ./server
 
@@ -20,14 +19,21 @@ RUN npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
+
+# Копируем манифесты
 COPY package*.json ./
 COPY server/package*.json ./server/
 
+# Ставим только продакшн зависимости
 RUN npm ci --only=production
 
+# Копируем собранный код бэка и схему
 COPY --from=builder /app/server/dist ./server/dist
 COPY --from=builder /app/server/prisma ./server/prisma
-COPY --from=builder /app/server/node_modules/.prisma ./server/node_modules/.prisma
+
+# Копируем сгенерированный Prisma Client (он лежит в КОРНЕВОМ node_modules)
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
 WORKDIR /app/server
 EXPOSE 5000
