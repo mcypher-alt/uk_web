@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { SunIcon, MoonIcon } from '@heroicons/react/24/outline';
 import { Toaster } from 'sonner';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { User } from './types.ts';
@@ -127,7 +128,7 @@ export default function App() {
               className="p-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-lg hover:scale-105 active:scale-95 transition-all"
               title="Переключить тему"
             >
-              {theme === 'light' ? '🌙' : '☀️'}
+              {theme === 'light' ? <MoonIcon className="h-6 w-6" /> : <SunIcon className="h-6 w-6" />}
             </button>
             
             <button 

@@ -1,12 +1,11 @@
 services:
   db:
     image: postgres:16-alpine
-    # container_name: uk_web_db  <-- УДАЛИ ЭТУ СТРОКУ
     restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
-      POSTGRES_DB: ${POSTGRES_DB:-uk_web_db} # <-- Лучше подставить переменную!
+      POSTGRES_DB: ${POSTGRES_DB:-uk_web_db}
     env_file:
       - .env
     volumes:
@@ -16,7 +15,6 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
-    # container_name: uk_web_server <-- УДАЛИ ЭТУ СТРОКУ
     restart: always
     env_file:
       - .env
@@ -29,7 +27,6 @@ services:
     build:
       context: .
       dockerfile: client/Dockerfile
-    # container_name: uk_web_client <-- УДАЛИ ЭТУ СТРОКУ
     restart: always
     ports:
       - "${CLIENT_PORT:-3000}:80"
