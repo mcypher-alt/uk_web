@@ -67,7 +67,12 @@ export default function ResetPasswordScreen({ onBackToLogin }: Props) {
       }
       setStep(2);
     } catch (err: any) {
-      const message = err.response?.data?.error || 'Ошибка при отправке запроса';
+      const message =
+      err.response?.data?.error ||
+      err.data?.error ||
+      err.error || (typeof err === 'string' ? err : null) || 
+      err.message || 'Ошибка при отправке запроса';
+
       toast.error(message);
     } finally {
       setIsLoading(false);
@@ -94,7 +99,14 @@ export default function ResetPasswordScreen({ onBackToLogin }: Props) {
       toast.success('Пароль успешно изменен!');
       onBackToLogin();
     } catch (err: any) {
-      const message = err.response?.data?.error || 'Не удалось сбросить пароль';
+      const message =
+      err.response?.data?.error ||
+      err.data?.error ||
+      err.error ||
+      (typeof err === 'string' ? err : null) || 
+      err.message ||
+      'Ошибка при отправке запроса';
+    
       toast.error(message);
     } finally {
       setIsLoading(false);
