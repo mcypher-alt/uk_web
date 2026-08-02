@@ -18,6 +18,23 @@ jobs:
           script: |
             cd ~/uk_web
             git pull origin main
+            
+            # 1. Останавливаем контейнеры
             docker compose down
-            docker compose up --build -d
-            docker image prune -f  # Удаляет старые неиспользуемые образы
+            
+            # 2. Безопасно чистим старые образы и кэш (БЕЗ флага --volumes!)
+            docker system prune -af
+            
+            # 3. Собираем бэкенд и чистим кэш сборки
+            docker compose build server
+            docker builder prune -f
+            
+            # 4. Собираем фронтенд и чистим кэш сборки
+            docker compose build client
+            docker builder prune -f
+            
+            # 5. Поднимаем всё из готовых образов
+            docker compose up -d
+            
+            # 6. Финальная подчистка неиспользуемых временных образов
+            docker image prune -f
