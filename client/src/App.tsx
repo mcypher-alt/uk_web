@@ -128,7 +128,11 @@ export default function App() {
               className="p-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-lg hover:scale-105 active:scale-95 transition-all"
               title="Переключить тему"
             >
-              {theme === 'light' ? <MoonIcon className="h-6 w-6" /> : <SunIcon className="h-6 w-6" />}
+              {theme === 'light' ? (
+                <MoonIcon style={{ width: 24, height: 24 }} />
+              ) : (
+                <SunIcon style={{ width: 24, height: 24 }} />
+              )}
             </button>
             
             <button 
