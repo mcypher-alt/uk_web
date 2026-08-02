@@ -30,7 +30,7 @@ jobs:
             docker builder prune -f
             
             # 4. Собираем фронтенд и чистим кэш сборки
-            docker compose build client
+            docker compose build --no-cache client
             docker builder prune -f
             
             # 5. Поднимаем всё из готовых образов
