@@ -33,7 +33,7 @@ Fullstack-приложение для управления заявками, к�
 ### Backend & Database
 *   **Server:** Node.js, Express
 *   **ORM:** Prisma
-*   **Database:** SQLite (временно для этапа разработки)
+*   **Database:** Postgre
 *   **Security:** HttpOnly Cookies (JWT/Session management)
 
 ---
@@ -42,11 +42,8 @@ Fullstack-приложение для управления заявками, к�
 
 Проект активно развивается. Запланировано внедрение следующего функционала (Work in Progress):
 
-- [ ] **Docker Containers:** Обернуть Frontend, Backend и БД в Docker/Docker Compose для стандартизации окружения.
-- [ ] **DB Migration:** Замена SQLite на **PostgreSQL** для обеспечения надежности и масштабируемости в production.
 - [ ] **SMS Notifications:** Интеграция стороннего API для автоматической рассылки SMS-уведомлений мастерам и клиентам.
 - [ ] **Landing Page Webhooks:** Реализация публичных API-эндпоинтов для автоматической регистрации заявок напрямую с внешнего сайта-лендинга.
-- [ ] **CRUD Домов:** Добавление интерфейса администратора для внесения новых адресов/домов в базу данных.
 
 ---
 
