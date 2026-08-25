@@ -4,258 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
 import { ticketsApi, dictApi, authApi } from '../api/index.js';
 import type { User, Ticket } from '../types.js';
+import { AddHouseModal, CreateTicketModal, InviteEmployeeModal } from '../components/modals';
+import { ActionButton, Select } from '../components/ui/index.js';
+import { StatusBadge, EmergencyTimer, MasterCell } from '../components/dashboard';
 
-interface EmergencyTimerProps {
-  createdAt: string | Date; // Время создания заявки с бэкенда
-}
-
-export function EmergencyTimer({ createdAt }: EmergencyTimerProps) {
-  const [timeLeft, setTimeLeft] = useState<number>(0);
-
-  useEffect(() => {
-    const calculateTimeLeft = () => {
-      const createdTime = new Date(createdAt).getTime();
-      const deadlineTime = createdTime + 30 * 60 * 1000; // +30 минут в миллисекундах
-      const now = Date.now();
-      const difference = deadlineTime - now;
-
-      return difference > 0 ? Math.floor(difference / 1000) : 0;
-    };
-
-    // Первичный расчет
-    setTimeLeft(calculateTimeLeft());
-
-    // Обновляем каждую секунду
-    const interval = setInterval(() => {
-      const remaining = calculateTimeLeft();
-      setTimeLeft(remaining);
-
-      if (remaining <= 0) {
-        clearInterval(interval);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [createdAt]);
-
-  if (timeLeft <= 0) {
-    return (
-      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-bold bg-red-600 text-white animate-pulse">
-        ПРОСРОЧЕНО
-      </span>
-    );
-  }
-
-  const minutes = Math.floor(timeLeft / 60);
-  const seconds = timeLeft % 60;
-
-  // Форматируем в вид 05:09 вместо 5:9
-  const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-
-  // Меняем цвет в зависимости от того, сколько времени осталось (меньше 5 минут — красный)
-  const textColor = minutes < 5 
-    ? 'text-red-600 dark:text-red-400 font-black animate-pulse' 
-    : 'text-amber-600 dark:text-amber-400 font-bold';
-
-  return (
-    <span className={`font-mono text-sm ${textColor}`}>
-      ⏱️ {formattedTime}
-    </span>
-  );
-}
-
-export function MasterCell({ ticket }: { ticket: Ticket }) {
-  const queryClient = useQueryClient();
-  const [isOpen, setIsOpen] = useState(false);
-  
-  // 2. Стейт для хранения точных координат окна
-  const [coords, setCoords] = useState({ top: 0, bottom: 0, left: 0, width: 0, isDropUp: false });
-
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const portalRef = useRef<HTMLDivElement>(null);
-
-  // Умный обработчик кликов и скролла
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      // Закрываем, только если клик был НЕ по кнопке и НЕ внутри самого портала
-      if (
-        buttonRef.current && !buttonRef.current.contains(target) &&
-        portalRef.current && !portalRef.current.contains(target)
-      ) {
-        setIsOpen(false);
-      }
-    };
-
-    const handleScroll = (event: Event) => {
-      // Игнорируем скролл внутри самого списка мастеров, но закрываем меню при скролле таблицы
-      if (portalRef.current && portalRef.current.contains(event.target as Node)) {
-        return;
-      }
-      setIsOpen(false);
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    // capture: true обязательно, чтобы перехватить скролл внутреннего div-а таблицы
-    window.addEventListener('scroll', handleScroll, true); 
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('scroll', handleScroll, true);
-    };
-  }, [isOpen]);
-
-  const { data: masters = [], isLoading } = useQuery({
-    queryKey: ['masters', ticket.companyId],
-    queryFn: async () => {
-      const res = await dictApi.getMasters(ticket.companyId);
-      return Array.isArray(res) ? res : ((res as any)?.users || (res as any)?.data || []);
-    },
-  });
-
-  const assignMutation = useMutation({
-    mutationFn: (masterId: number) => ticketsApi.assignMaster({ ticketId: ticket.id, masterId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tickets'] });
-      setIsOpen(false);
-    },
-    onError: (err: any) => {
-    const message = err.response?.data?.error || err.response?.data?.message || 'Не удалось назначить мастера';
-    toast.error(message);
-  }
-  });
-
-  // Расчет координат для портала
-  const toggleDropdown = () => {
-    if (!isOpen && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      
-      // Если снизу меньше 260px, а сверху достаточно места — открываем вверх
-      const isDropUp = spaceBelow < 260 && rect.top > 260;
-
-      setCoords({
-        left: rect.left,
-        width: rect.width,
-        top: rect.top,
-        bottom: rect.bottom,
-        isDropUp
-      });
-      setIsOpen(true);
-    } else {
-      setIsOpen(false);
-    }
-  };
-
-  if (ticket.status === 'completed') {
-    if (ticket.masterId) {
-      const assignedMaster = masters.find((m: User) => m.id === ticket.masterId);
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium">
-          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-          {assignedMaster ? assignedMaster.name : `Мастер #${ticket.masterId}`}
-        </span>
-      );
-    }
-    return <span className="text-gray-400 italic text-xs">Закрыта (без мастера)</span>;
-  }
-
-  const currentMaster = masters.find((m: User) => m.id === ticket.masterId);
-
-  return (
-    <div className="relative w-full max-w-55">
-      <button
-        ref={buttonRef}
-        onClick={toggleDropdown}
-        disabled={assignMutation.isPending || isLoading}
-        className={`flex items-center justify-between w-full px-3 py-2 text-sm transition-all duration-200 border rounded-xl shadow-sm outline-none focus:ring-2 focus:ring-blue-500/20 ${
-          ticket.masterId
-            ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white hover:border-gray-300 dark:hover:border-gray-600'
-            : 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 animate-pulse hover:bg-red-100 dark:hover:bg-red-900/20'
-        } ${isOpen ? 'ring-2 ring-blue-500/20 border-blue-400 dark:border-blue-500' : ''}`}
-      >
-        <div className="flex items-center gap-2 truncate">
-          <svg className={`w-4 h-4 shrink-0 ${ticket.masterId ? 'text-gray-400' : 'text-red-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-          <span className="font-medium truncate">
-            {isLoading ? 'Загрузка...' : (currentMaster ? currentMaster.name : 'Назначить...')}
-          </span>
-        </div>
-
-        <svg
-          className={`w-4 h-4 shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? (coords.isDropUp ? 'rotate-0' : 'rotate-180') : (coords.isDropUp ? 'rotate-180' : '')}`}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {/* МАГИЯ ПОРТАЛА: рендерится поверх всего сайта */}
-      {isOpen && createPortal(
-        <div
-          ref={portalRef}
-          style={{
-            position: 'fixed',
-            left: `${coords.left}px`,
-            width: `${coords.width}px`,
-            // Математика позиции от окна браузера
-            ...(coords.isDropUp
-              ? { bottom: `${window.innerHeight - coords.top + 8}px` }
-              : { top: `${coords.bottom + 8}px` })
-          }}
-          className={`z-9999 bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl border border-gray-100 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden ${
-            coords.isDropUp ? 'origin-bottom' : 'origin-top'
-          }`}
-        >
-          <div className="p-1.5 max-h-60 overflow-y-auto">
-            {masters.length === 0 && (
-              <div className="px-3 py-4 text-sm text-center text-gray-500 dark:text-gray-400">
-                Мастера не найдены
-              </div>
-            )}
-            
-            {masters.map((m: User) => {
-              const isSelected = ticket.masterId === m.id;
-              
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => assignMutation.mutate(m.id)}
-                  className={`flex items-center justify-between w-full px-3 py-2.5 text-sm transition-all rounded-lg group ${
-                    isSelected
-                      ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 font-medium'
-                      : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                  }`}
-                >
-                  <div className="flex flex-col items-start truncate">
-                    <span className="truncate">{m.name}</span>
-                    <span className={`text-[10px] mt-0.5 ${isSelected ? 'text-blue-500/70 dark:text-blue-400/70' : 'text-gray-400 dark:text-gray-500'}`}>
-                      ID: {m.id}
-                    </span>
-                  </div>
-
-                  {isSelected && (
-                    <svg className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>,
-        document.body // Целевой узел портала
-      )}
-    </div>
-  );
-}
-
-// ОСНОВНОЙ КОМПОНЕНТ ДИСПЕТЧЕРСКОЙ
 export default function DispatcherDashboard({ user }: { user: User }) {
   const [filters, setFilters] = useState({
     companyId: 'all', 
@@ -263,6 +15,8 @@ export default function DispatcherDashboard({ user }: { user: User }) {
     status: '',
     type: ''
   });
+
+const [inviteError, setInviteError] = useState<string | null>(null);
 
   // ПАГИНАЦИЯ
   const [currentPage, setCurrentPage] = useState(1);
@@ -333,56 +87,42 @@ export default function DispatcherDashboard({ user }: { user: User }) {
     phone: ''
   });
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-  const [isCopied, setIsCopied] = useState(false);
 
   const generateInviteMutation = useMutation({
-    mutationFn: (data: typeof inviteForm) => authApi.generateInvite({
-      role: data.role,
-      companyId: data.companyId,
-      phone: data.phone.trim() ? data.phone.trim() : undefined
-    }),
-    onSuccess: (res: any) => {
-      setGeneratedLink(res.inviteUrl);
-      setInviteError(null);
-      setIsCopied(false);
-    },
-    onError: (err: any) => {
-      setInviteError(err.response?.data?.error || err.response?.data?.message || 'Не удалось сгенерировать инвайт');
-      setGeneratedLink(null);
-      setIsCopied(false);
-    }
+  mutationFn: (data: { role: string; companyId: string; phone: string }) => authApi.generateInvite({
+    role: data.role,
+    companyId: data.companyId,
+    phone: data.phone.trim() ? data.phone.trim() : undefined
+  }),
+  onSuccess: (res: any) => {
+    setGeneratedLink(res.inviteUrl);
+    setInviteError(null);
+    // СТРОКУ setIsCopied(false) МЫ УДАЛИЛИ ОТСЮДА (она теперь живет внутри модалки)
+  },
+  onError: (err: any) => {
+    setInviteError(err.response?.data?.error || err.response?.data?.message || 'Не удалось сгенерировать инвайт');
+    setGeneratedLink(null);
+    // СТРОКУ setIsCopied(false) МЫ УДАЛИЛИ ОТСЮДА
+  }
   });
-
-  const handleCopyLink = () => {
-    if (!generatedLink) return;
-    navigator.clipboard.writeText(generatedLink);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
-  };
 
   // ===============================================
   // СТЕЙТЫ И МУТАЦИЯ ДЛЯ ДОБАВЛЕНИЯ ДОМА
   // ===============================================
   const [isAddHouseOpen, setIsAddHouseOpen] = useState(false);
-  const [houseForm, setHouseForm] = useState({
-    companyId: userCompanies[0] || '', // Сброшен хардкод
-    address: ''
-  });
 
   const createHouseMutation = useMutation({
-    mutationFn: async (data: typeof houseForm) => {
+    mutationFn: async (data: { companyId: string; address: string }) => {
       return await dictApi.postHouses({
         companyId: data.companyId,
         address: data.address.trim(),
       });
     },
     onSuccess: () => {
-      toast.success('Дом успешно добавлен в базу!');
-      setIsAddHouseOpen(false);
-      // Гарантированно берем актуальную первую УК из массива
-      setHouseForm({ companyId: userCompanies[0] || '', address: '' });
-      queryClient.invalidateQueries({ queryKey: ['houses'] });
+    toast.success('Дом успешно добавлен в базу!');
+    setIsAddHouseOpen(false);
+    // СТРОКУ setHouseForm(...) МЫ УДАЛИЛИ ОТСЮДА
+    queryClient.invalidateQueries({ queryKey: ['houses'] });
     },
     onError: (err: any) => {
       console.error('Ошибка добавления дома:', err);
@@ -395,21 +135,9 @@ export default function DispatcherDashboard({ user }: { user: User }) {
   // СТЕЙТЫ И МУТАЦИЯ ДЛЯ ЗАЯВОК
   // ===============================================
   const [isCreateTicketOpen, setIsCreateTicketOpen] = useState(false);
-  const [ticketForm, setTicketForm] = useState({
-    companyId: userCompanies[0] || '', // Сброшен хардкод
-    address: '',
-    description: '',
-    isEmergency: false
-  });
-
-  const { data: houses = [], isLoading: isHousesLoading } = useQuery({
-    queryKey: ['houses', ticketForm.companyId],
-    queryFn: () => dictApi.getHouses(ticketForm.companyId),
-    enabled: isCreateTicketOpen && !!ticketForm.companyId, 
-  });
 
   const createTicketMutation = useMutation({
-    mutationFn: (data: typeof ticketForm) => ticketsApi.create({
+    mutationFn: (data: { companyId: string; address: string; description: string; isEmergency: boolean }) => ticketsApi.create({
       companyId: data.companyId,
       address: data.address.trim(),
       description: data.description.trim(),
@@ -418,7 +146,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tickets'] });
       setIsCreateTicketOpen(false);
-      setTicketForm({ companyId: userCompanies[0] || '', address: '', description: '', isEmergency: false });
     },
     onError: (err: any) => {
       const message = err.response?.data?.error || err.response?.data?.message || 'Не удалось создать заявку';
@@ -427,12 +154,6 @@ export default function DispatcherDashboard({ user }: { user: User }) {
   });
 
   const [ticketIdToConfirm, setTicketIdToConfirm] = useState<number | null>(null);
-
-  const StatusBadge = ({ status }: { status: string }) => {
-    if (status === 'completed') return <span className="text-green-600 dark:text-green-400 font-bold">Завершен</span>;
-    if (status === 'in_work') return <span className="text-yellow-600 dark:text-yellow-500 font-bold">В процессе</span>;
-    return <span className="text-cyan-600 dark:text-cyan-400 font-bold">Новое</span>;
-  };
 
   return (
     <div className="w-full h-full flex flex-col p-6 max-w-[1600px] mx-auto text-gray-900 dark:text-white transition-colors">
@@ -452,74 +173,55 @@ export default function DispatcherDashboard({ user }: { user: User }) {
             Экстренные
           </label>
 
-          <select 
-            className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none transition-colors"
+          {/* Фильтр по компании */}
+          <Select
             value={filters.companyId}
-            onChange={(e) => setFilters(p => ({ ...p, companyId: e.target.value, masterId: '' }))}
+            onChange={(e) => setFilters((p) => ({ ...p, companyId: e.target.value, masterId: '' }))}
           >
             <option value="all">Все компании</option>
-            {userCompanies.map(id => (
-              <option key={id} value={id}>{id === 'crocus' ? 'АО Крокус' : id === 'meridian' ? 'Меридиан' : id}</option>
+            {userCompanies.map((id) => (
+              <option key={id} value={id}>
+                {id === 'crocus' ? 'АО Крокус' : id === 'meridian' ? 'Меридиан' : id}
+              </option>
             ))}
-          </select>
-          
-          <select 
-            className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none transition-colors disabled:opacity-50"
+          </Select>
+
+          {/* Фильтр по мастеру */}
+          <Select
             disabled={filters.companyId === 'all'}
             value={filters.masterId}
-            onChange={(e) => setFilters(p => ({ ...p, masterId: e.target.value }))}
+            onChange={(e) => setFilters((p) => ({ ...p, masterId: e.target.value }))}
           >
             <option value="">Все мастера</option>
             {headerMasters.map((m: User) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
             ))}
-          </select>
+          </Select>
 
-          <select 
-            className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none transition-colors mr-2"
+          {/* Фильтр по статусу */}
+          <Select
             value={filters.status}
-            onChange={(e) => setFilters(p => ({ ...p, status: e.target.value }))}
+            onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}
           >
             <option value="">Все статусы</option>
             <option value="new">Новое</option>
             <option value="in_work">В процессе</option>
             <option value="completed">Завершен</option>
-          </select>
+          </Select>
 
-          {/* КНОПКА ДОБАВЛЕНИЯ ДОМА */}
-          <button
-            onClick={() => {
-              setHouseForm({ companyId: userCompanies[0] || '', address: '' });
-              setIsAddHouseOpen(true);
-            }}
-            className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm"
-          >
+          <ActionButton variant="gray" onClick={() => setIsAddHouseOpen(true)}>
             + Добавить дом
-          </button>
+          </ActionButton>
 
-          {/* КНОПКА НОВАЯ ЗАЯВКА */}
-          <button
-            onClick={() => {
-              setTicketForm({ companyId: userCompanies[0] || '', address: '', description: '', isEmergency: false });
-              setIsCreateTicketOpen(true);
-            }}
-            className="bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm"
-          >
+          <ActionButton variant="emerald" onClick={() => setIsCreateTicketOpen(true)}>
             + Новая заявка
-          </button>
-          
-          {/* КНОПКА СОЗДАТЬ СОТРУДНИКА */}
-          <button
-            onClick={() => {
-              setInviteForm(p => ({ ...p, companyId: userCompanies[0] || '', phone: '' }));
-              setGeneratedLink(null);
-              setInviteError(null);
-              setIsInviteModalOpen(true);
-            }}
-            className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm"
-          >
+          </ActionButton>
+
+          <ActionButton variant="blue" onClick={() => setIsInviteModalOpen(true)}>
             Создать сотрудника
-          </button>
+          </ActionButton>
         </div>
       </div>
 
@@ -642,301 +344,39 @@ export default function DispatcherDashboard({ user }: { user: User }) {
         )}
       </div>
 
-      {/* =========================================
-          МОДАЛЬНЫЕ ОКНА
-          ========================================= */}
-
       {/* 1. СОЗДАНИЕ СОТРУДНИКА */}
-      {isInviteModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl max-w-md w-full p-6 text-gray-900 dark:text-white relative">
-            
-            <button 
-              onClick={() => setIsInviteModalOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-white text-lg font-bold"
-            >
-              ✕
-            </button>
-
-            <h3 className="text-xl font-bold mb-1">Регистрация сотрудника</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Генерация инвайт-ссылки для мастера или диспетчера</p>
-
-            {inviteError && (
-              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg font-medium">
-                {inviteError}
-              </div>
-            )}
-
-            {generatedLink ? (
-              <div className="space-y-4">
-                <div className="p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 text-xs rounded-lg font-medium">
-                  Ссылка успешно создана! Скопируйте её и передайте сотруднику:
-                </div>
-                <textarea
-                  readOnly
-                  value={generatedLink}
-                  onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-                  className="w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl text-sm focus:outline-none select-all font-mono resize-none h-20"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyLink}
-                  disabled={isCopied}
-                  className={`w-full py-2.5 font-medium text-sm rounded-xl transition-all duration-200 ${
-                    isCopied
-                      ? 'bg-emerald-700 text-white cursor-default'
-                      : 'bg-green-600 hover:bg-green-700 text-white active:scale-[0.99]'
-                  }`}
-                >
-                  {isCopied ? '✓ Ссылка скопирована!' : 'Скопировать ссылку'}
-                </button>
-              </div>
-            ) : (
-              <form 
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  generateInviteMutation.mutate(inviteForm);
-                }}
-                className="space-y-4"
-              >
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Компания</label>
-                  <select
-                    className="w-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none"
-                    value={inviteForm.companyId}
-                    onChange={(e) => setInviteForm(p => ({ ...p, companyId: e.target.value }))}
-                  >
-                    {userCompanies.length === 0 && <option value="" disabled>Загрузка...</option>}
-                    {userCompanies.map(id => (
-                      <option key={id} value={id}>{id === 'crocus' ? 'АО Крокус' : id === 'meridian' ? 'Меридиан' : id}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Роль сотрудника</label>
-                  <select
-                    className="w-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none"
-                    value={inviteForm.role}
-                    onChange={(e) => setInviteForm(p => ({ ...p, role: e.target.value }))}
-                  >
-                    {user.role === 'admin' ? (
-                      <>
-                        <option value="dispatcher">Диспетчер</option>
-                        <option value="master">Мастер</option>
-                      </>
-                    ) : (
-                      <option value="master">Мастер</option>
-                    )}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Телефон сотрудника</label>
-                  <input
-                    type="tel"
-                    placeholder="79991234567"
-                    value={inviteForm.phone}
-                    onChange={(e) => setInviteForm(p => ({ ...p, phone: e.target.value }))}
-                    className="w-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={generateInviteMutation.isPending}
-                  className="w-full mt-2 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium text-sm rounded-xl transition-colors disabled:opacity-50"
-                >
-                  {generateInviteMutation.isPending ? 'Генерация...' : 'Отправить приглашение'}
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
+      <InviteEmployeeModal
+        isOpen={isInviteModalOpen}
+        onClose={() => {
+          setIsInviteModalOpen(false);
+          setGeneratedLink(null);
+          setInviteError(null);
+        }}
+        user={{ ...user }}
+        userCompanies={userCompanies}
+        onSubmit={(formData) => generateInviteMutation.mutate(formData)}
+        isPending={generateInviteMutation.isPending}
+        generatedLink={generatedLink}
+        inviteError={inviteError}
+      />
 
       {/* 2. ДОБАВЛЕНИЕ ДОМА */}
-      {isAddHouseOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl max-w-md w-full p-6 text-gray-900 dark:text-white relative">
-            
-            <button 
-              onClick={() => setIsAddHouseOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-white text-lg font-bold transition-colors"
-            >
-              ✕
-            </button>
-
-            <h3 className="text-xl font-bold mb-1">Добавление нового дома</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Зарегистрировать новый адрес в базе Управляющей Компании</p>
-
-            <form 
-              noValidate
-              onSubmit={(e) => {
-                e.preventDefault();
-                
-                if (!houseForm.companyId) {
-                  toast.error('Выберите управляющую компанию!');
-                  return;
-                }
-
-                if (!houseForm.address.trim()) {
-                  toast.error('Введите адрес дома!');
-                  return;
-                }
-
-                createHouseMutation.mutate(houseForm);
-              }}
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Управляющая компания</label>
-                <select
-                  className="w-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none"
-                  value={houseForm.companyId}
-                  onChange={(e) => setHouseForm(p => ({ ...p, companyId: e.target.value }))}
-                >
-                  {userCompanies.length === 0 && <option value="" disabled>Загрузка...</option>}
-                  {userCompanies.map(id => (
-                    <option key={id} value={id}>
-                      {id === 'crocus' ? 'АО Крокус' : id === 'meridian' ? 'Меридиан' : id}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Адрес дома</label>
-                <input
-                  type="text"
-                  placeholder="Например: ул. Ленина, д. 10"
-                  className="w-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
-                  value={houseForm.address}
-                  onChange={(e) => setHouseForm(p => ({ ...p, address: e.target.value }))}
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={createHouseMutation.isPending}
-                className="w-full mt-2 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-medium text-sm rounded-xl transition-colors disabled:opacity-50 shadow-md flex justify-center items-center gap-2"
-              >
-                {createHouseMutation.isPending ? 'Добавление...' : 'Добавить адрес'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      <AddHouseModal
+        isOpen={isAddHouseOpen}
+        onClose={() => setIsAddHouseOpen(false)}
+        userCompanies={userCompanies}
+        onSubmit={(formData) => createHouseMutation.mutate(formData)}
+        isPending={createHouseMutation.isPending}
+      />
 
       {/* 3. СОЗДАНИЕ ЗАЯВКИ */}
-      {isCreateTicketOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl max-w-md w-full p-6 text-gray-900 dark:text-white relative">
-            
-            <button 
-              onClick={() => setIsCreateTicketOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-white text-lg font-bold"
-            >
-              ✕
-            </button>
-
-            <h3 className="text-xl font-bold mb-1">Создание новой заявки</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Зарегистрировать новую проблему жильца в системе</p>
-
-            <form 
-              noValidate
-              onSubmit={(e) => {
-                e.preventDefault();
-                
-                if (!ticketForm.address) {
-                  toast.error('Выберите адрес!');
-                  return;
-                }
-                
-                if (!ticketForm.description.trim()) {
-                  toast.error('Заполните описание проблемы!');
-                  return;
-                }
-
-                createTicketMutation.mutate(ticketForm);
-              }}
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Управляющая компания</label>
-                <select
-                  className="w-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none"
-                  value={ticketForm.companyId}
-                  onChange={(e) => setTicketForm(p => ({ ...p, companyId: e.target.value, address: '' }))}
-                >
-                  {userCompanies.length === 0 && <option value="" disabled>Загрузка...</option>}
-                  {userCompanies.map(id => (
-                    <option key={id} value={id}>{id === 'crocus' ? 'АО Крокус' : id === 'meridian' ? 'Меридиан' : id}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Адрес дома</label>
-                <select
-                  className="w-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none disabled:opacity-50"
-                  value={ticketForm.address}
-                  onChange={(e) => setTicketForm(p => ({ ...p, address: e.target.value }))}
-                  disabled={isHousesLoading}
-                  required
-                >
-                  <option value="" disabled>
-                    {isHousesLoading ? 'Загрузка списка домов...' : 'Выберите адрес из списка...'}
-                  </option>
-                  {houses.map((house: any, index: number) => {
-                    const houseAddress = typeof house === 'string' ? house : house.address;
-                    return (
-                      <option key={index} value={houseAddress}>
-                        {houseAddress}
-                      </option>
-                    )
-                  })}
-                </select>
-                
-                {!isHousesLoading && houses.length === 0 && (
-                  <p className="text-[11px] text-red-500 mt-1 font-medium">У этой УК пока нет зарегистрированных домов в базе данных</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Описание проблемы</label>
-                <textarea
-                  placeholder="Прорвало трубу в ванной, топит соседей..."
-                  value={ticketForm.description}
-                  onChange={(e) => setTicketForm(p => ({ ...p, description: e.target.value }))}
-                  className="w-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-700 focus:outline-none resize-none h-24"
-                  required
-                />
-              </div>
-
-              <div className="pt-1">
-                <label className="flex items-center gap-3 cursor-pointer select-none text-red-600 dark:text-red-400 font-bold text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-xl border border-red-200 dark:border-red-900/50 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">
-                  <input 
-                    type="checkbox" 
-                    checked={ticketForm.isEmergency}
-                    onChange={(e) => setTicketForm(p => ({ ...p, isEmergency: e.target.checked }))}
-                    className="w-5 h-5 accent-red-600 cursor-pointer"
-                  />
-                  Выставить статус: ЭКСТРЕННО (30 минут)
-                </label>
-              </div>
-
-              <button
-                type="submit"
-                disabled={createTicketMutation.isPending || isHousesLoading}
-                className="w-full mt-2 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-medium text-sm rounded-xl transition-colors disabled:opacity-50 shadow-md"
-              >
-                {createTicketMutation.isPending ? 'Создание заявки...' : 'Зарегистрировать заявку'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      <CreateTicketModal
+        isOpen={isCreateTicketOpen}
+        onClose={() => setIsCreateTicketOpen(false)}
+        userCompanies={userCompanies}
+        onSubmit={(formData) => createTicketMutation.mutate(formData)}
+        isPending={createTicketMutation.isPending}
+      />
     </div>
   );
 }

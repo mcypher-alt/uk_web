@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { toast } from 'sonner'; 
-import { passwordApi, mobileApi } from '../api/index.js'; 
+import { passwordApi } from '../api/index.js'; 
 
 interface Props {
   onBackToLogin: () => void;
@@ -13,37 +13,6 @@ export default function ResetPasswordScreen({ onBackToLogin }: Props) {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  
-  // Состояние для работы с PUSH / поллингом
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [pushStatus, setPushStatus] = useState<'pending' | 'approved' | 'expired'>('pending');
-
-  // Эффект для постоянного опроса сервера (Polling)
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-
-    if (step === 2 && sessionId && pushStatus === 'pending') {
-      interval = setInterval(async () => {
-        try {
-          const res = await mobileApi.checkStatus(sessionId);
-          
-          if (res.status === 'approved') {
-            setPushStatus('approved');
-            toast.success('Подтверждено на телефоне!');
-            clearInterval(interval);
-          } else if (res.status === 'expired') {
-            setPushStatus('expired');
-            toast.error('Время ожидания истекло');
-            clearInterval(interval);
-          }
-        } catch (error) {
-          console.error('Ошибка проверки статуса', error);
-        }
-      }, 3000); // Стучимся каждые 3 секунды
-    }
-
-    return () => clearInterval(interval); // Очищаем таймер при размонтировании
-  }, [step, sessionId, pushStatus]);
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,25 +22,21 @@ export default function ResetPasswordScreen({ onBackToLogin }: Props) {
     }
 
     setIsLoading(true);
-    setPushStatus('pending'); // Сбрасываем статус при новом запросе
     setCode('');
     setNewPassword('');
 
     try {
       const res = await passwordApi.forgotPassword(phone);
-      toast.success(res.message || 'Запрос отправлен!');
-      
-      // Сохраняем ID сессии, который вернул бэкенд, чтобы начать поллинг
-      if (res.sessionId) {
-        setSessionId(res.sessionId);
-      }
+      toast.success(res.message || 'СМС с кодом отправлено!');
       setStep(2);
     } catch (err: any) {
       const message =
-      err.response?.data?.error ||
-      err.data?.error ||
-      err.error || (typeof err === 'string' ? err : null) || 
-      err.message || 'Ошибка при отправке запроса';
+        err.response?.data?.error ||
+        err.data?.error ||
+        err.error || 
+        (typeof err === 'string' ? err : null) || 
+        err.message || 
+        'Ошибка при отправке запроса';
 
       toast.error(message);
     } finally {
@@ -82,8 +47,7 @@ export default function ResetPasswordScreen({ onBackToLogin }: Props) {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Если PUSH не подтвержден, требуем код. Если подтвержден — код не нужен.
-    if (pushStatus !== 'approved' && !code) {
+    if (!code) {
       toast.error('Введите код из СМС');
       return;
     }
@@ -100,12 +64,12 @@ export default function ResetPasswordScreen({ onBackToLogin }: Props) {
       onBackToLogin();
     } catch (err: any) {
       const message =
-      err.response?.data?.error ||
-      err.data?.error ||
-      err.error ||
-      (typeof err === 'string' ? err : null) || 
-      err.message ||
-      'Ошибка при отправке запроса';
+        err.response?.data?.error ||
+        err.data?.error ||
+        err.error ||
+        (typeof err === 'string' ? err : null) || 
+        err.message ||
+        'Ошибка при отправке запроса';
     
       toast.error(message);
     } finally {
@@ -121,8 +85,8 @@ export default function ResetPasswordScreen({ onBackToLogin }: Props) {
         </h2>
         <p className="text-gray-500 dark:text-gray-400 text-sm text-center mb-6">
           {step === 1 
-            ? 'Введите номер, чтобы получить запрос на подтверждение' 
-            : 'Подтвердите вход на телефоне и придумайте новый пароль'}
+            ? 'Введите номер, чтобы получить СМС с кодом подтверждения' 
+            : 'Введите код из СМС и придумайте новый пароль'}
         </p>
 
         {step === 1 ? (
@@ -146,7 +110,7 @@ export default function ResetPasswordScreen({ onBackToLogin }: Props) {
               disabled={isLoading}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors disabled:bg-blue-400 flex justify-center items-center"
             >
-              {isLoading ? 'Отправка...' : 'Отправить'}
+              {isLoading ? 'Отправка...' : 'Получить код'}
             </button>
             
             <button
@@ -160,33 +124,19 @@ export default function ResetPasswordScreen({ onBackToLogin }: Props) {
         ) : (
           <form onSubmit={handleResetPassword} noValidate className="space-y-5">
             
-            {/* Скрываем поле кода, если PUSH прошел успешно */}
-            {pushStatus !== 'approved' && (
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Код из СМС
-                  </label>
-                  {pushStatus === 'pending' && (
-                    <span className="text-xs text-blue-500 animate-pulse">Ожидаем PUSH...</span>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="Или введите код, если PUSH не пришел"
-                  disabled={isLoading}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                />
-              </div>
-            )}
-
-            {pushStatus === 'approved' && (
-              <div className="p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm text-center font-medium">
-                ✅ Номер успешно подтвержден!
-              </div>
-            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Код из СМС
+              </label>
+              <input
+                type="text"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="Например: 1234"
+                disabled={isLoading}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+              />
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -204,7 +154,7 @@ export default function ResetPasswordScreen({ onBackToLogin }: Props) {
             
             <button
               type="submit"
-              disabled={isLoading || pushStatus === 'expired'}
+              disabled={isLoading}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors disabled:bg-blue-400 flex justify-center items-center"
             >
               {isLoading ? 'Сохранение...' : 'Сохранить новый пароль'}
