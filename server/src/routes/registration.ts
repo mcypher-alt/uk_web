@@ -71,6 +71,21 @@ router.post('/generate', requireAuth(['dispatcher', 'admin']), async (req: Reque
         const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
         const inviteUrl = `${clientUrl}/?token=${token}`;
 
+        const encodedEmail = encodeURIComponent(process.env.SMSAERO_LOGIN || '');
+        const encodedApiKey = encodeURIComponent(process.env.SMSAERO_API_KEY || '');
+        const encodedText = encodeURIComponent(inviteUrl);
+        const encodedSign = encodeURIComponent(process.env.SMSAERO_SIGN || 'SMS Aero');
+
+        const url = `https://${encodedEmail}:${encodedApiKey}@gate.smsaero.ru/v2/sms/send?number=${cleanPhone}&text=${encodedText}&sign=${encodedSign}`;
+
+        const aeroResponse = await fetch(url);
+        const aeroData = await aeroResponse.json();
+
+        if (!aeroData.success) {
+        console.error('Ошибка SMS Aero:', aeroData);
+        throw new Error(aeroData.message || 'Не удалось отправить СМС');
+        }
+
         return res.json({
             success: true,
             inviteUrl,

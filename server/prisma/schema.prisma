@@ -70,8 +70,19 @@ model Ticket {
   masterId       Int?      // Может быть пустой, пока диспетчер не назначил
   master         User?     @relation("MasterTickets", fields: [masterId], references: [id])
 
+  photos         TicketPhoto[]
+
   managerRating  Int?      // Оценка от 1 до 5
   managerComment String?   // Комментарий диспетчера по итогу работы
+}
+
+model TicketPhoto {
+  id        Int      @id @default(autoincrement())
+  url       String   // Ссылка на фото в S3
+  createdAt DateTime @default(now())
+
+  ticketId  Int
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 }
 
 model MeterReading {

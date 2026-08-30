@@ -10,7 +10,7 @@ const router = Router();
  * 1. POST / — Создание заявки из веб-панели (Диспетчер / Админ)
  */
 router.post('/', requireAuth(['dispatcher', 'admin']), async (req: Request, res: Response): Promise<any> => {
-    const { companyId, address, description, type } = req.body;
+    const { companyId, address, description, type, photos } = req.body;
 
     if (!companyId || !address || !description || !type) {
         return res.status(400).json({ error: 'Все поля (companyId, address, description, type) обязательны' });
@@ -38,13 +38,19 @@ router.post('/', requireAuth(['dispatcher', 'admin']), async (req: Request, res:
 
         const newTicket = await prisma.ticket.create({
             data: {
-                address,
+                address: String(address).trim(),
                 description,
                 type,
                 status: 'new',
-                company: {
-                    connect: { id: companyId }
-                }
+                company: { connect: { id: companyId } },
+                photos: photos?.length
+                    ? {
+                        create: photos.map((url: string) => ({ url }))
+                    }
+                    : undefined
+            },
+            include: {
+                photos: true
             }
         });
 
@@ -52,6 +58,67 @@ router.post('/', requireAuth(['dispatcher', 'admin']), async (req: Request, res:
     } catch (error) {
         console.error('Ошибка при создании заявки:', error);
         return res.status(500).json({ error: 'Не удалось сохранить заявку в базу' });
+    }
+});
+
+router.post('/by-master', requireAuth(['master']), async (req: Request, res: Response): Promise<any> => {
+    const { address, description, type, photos } = req.body;
+    
+    // Данные мастера гарантированно достаем из авторизации (JWT / session)
+    const masterId = req.user?.id;
+    const companyId = req.user?.companyId;
+
+    if (!address || !description || !type) {
+        return res.status(400).json({ error: 'Поля address, description и type обязательны' });
+    }
+
+    if (type !== 'emergency' && type !== 'regular') {
+        return res.status(400).json({ error: "Тип заявки должен быть 'emergency' или 'regular'" });
+    }
+
+    try {
+        const houseExists = await prisma.house.findUnique({
+            where: {
+                address_companyId: {
+                    address: String(address).trim(),
+                    companyId: String(companyId)
+                }
+            }
+        });
+
+        if (!houseExists) {
+            return res.status(400).json({ 
+                error: 'Указанный адрес не обслуживается вашей компанией' 
+            });
+        }
+
+        const newTicket = await prisma.ticket.create({
+            data: {
+                address: String(address).trim(),
+                description,
+                type,
+                status: 'in_work',         // Мастер сразу берет ее в работу
+                assignedAt: new Date(),     // Фиксируем время назначения
+                company: { connect: { id: companyId } },
+                master: { connect: { id: masterId } },
+                photos: photos?.length
+                    ? {
+                        create: photos.map((url: string) => ({ url }))
+                      }
+                    : undefined
+            },
+            include: {
+                photos: true,
+                master: {
+                    select: { id: true, name: true }
+                }
+            }
+        });
+
+        return res.status(201).json(newTicket);
+    } catch (error) {
+        console.error('Ошибка при создании заявки мастером:', error);
+        return res.status(500).json({ error: 'Не удалось сохранить заявку мастера' });
     }
 });
 
