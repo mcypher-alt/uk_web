@@ -155,6 +155,17 @@ async function main() {
     },
   });
 
+  console.log('🏠 Создаем справочник домов...');
+
+  await prisma.house.createMany({
+    data: [
+      { address: 'ул. Ленина, д. 10', companyId: crocus.id },
+      { address: 'ул. Пушкина, д. 5', companyId: crocus.id },
+      { address: 'ул. Строителей, д. 1', companyId: crocus.id },
+      { address: 'пр. Космонавтов, д. 100', companyId: meridian.id },
+    ],
+  });
+
 
   console.log('\n✅ Сидирование успешно завершено! Все таблицы заполнены.');
   console.log('----------------------------------------------------');

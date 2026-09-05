@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import crypto from 'crypto';
+import { requireAuth } from '../middleware/auth.js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const router = Router();
@@ -29,7 +30,7 @@ const upload = multer({
   },
 });
 
-router.post('/upload', (req, res): any => {
+router.post('/upload', requireAuth(['master', 'dispatcher', 'admin']), (req, res): any => {
   upload.single('photo')(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       return res.status(400).json({ error: `Ошибка загрузки: ${err.message}` });

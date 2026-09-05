@@ -43,6 +43,14 @@ export const ticketsApi = {
 
   completeByMaster: async (data: { ticketId: number; masterId: number }) => 
     (await api.post('/tickets/master/complete', data)).data,
+  postByMaster: async (data: {
+  address: string;
+  description: string;
+  type: Ticket['type'];
+  photos?: string[];
+    }) => {
+      return (await api.post('/tickets/by-master', data)).data;
+    },
 };
 
 export const dictApi = {
@@ -102,3 +110,25 @@ export const mobileApi = {
     return res.data;
   }
 }
+
+export const uploadApi = {
+  uploadPhoto: async (
+    file: File, 
+    onProgress?: (percent: number) => void
+  ): Promise<string> => {
+    const formData = new FormData();
+    formData.append('photo', file);
+
+    const response = await axios.post<{ url: string }>('/api/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total && onProgress) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
+        }
+      },
+    });
+
+    return response.data.url;
+  },
+};
